@@ -12,7 +12,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
     <main className="flex flex-1 items-center justify-center px-4 py-12">
       <div className="w-full max-w-100 rounded-lg border border-border bg-surface p-8 shadow-sm">
         <h1 className="text-xl font-semibold">Entrar</h1>
-        <p className="mt-1 text-sm text-text-muted">Acesse os quadros das suas mentorias. Sem senha: mandamos um link para o seu e-mail.</p>
+        <p className="mt-1 text-sm text-text-muted">Acesse os quadros das suas mentorias.{hasSupabase && " Sem senha: mandamos um link para o seu e-mail."}</p>
         <LoginForm real={hasSupabase} googleError={sp.erro === "google" || sp.erro === "link"} />
         {!hasSupabase && (
           <p className="mt-6 rounded-md bg-warning-soft px-3 py-2 text-xs text-warning">
