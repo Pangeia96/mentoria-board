@@ -15,6 +15,7 @@ p.on("synced", () => {
   const types = {};
   doc.getMap("items").forEach((m) => { const t = m.get("type"); types[t] = (types[t] ?? 0) + 1; });
   console.log(JSON.stringify(types));
+  if (process.argv.includes("--list")) doc.getMap("items").forEach((m, id) => { const j = m.toJSON(); if (j.type === "connector" || j.type === "shape") console.log(id.slice(0, 8), j.type, j.z, j.shape ?? "", JSON.stringify(j.from ?? ""), JSON.stringify(j.to ?? "")); });
   p.destroy();
   setTimeout(() => process.exit(0), 200);
 });

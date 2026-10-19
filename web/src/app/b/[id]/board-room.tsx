@@ -15,8 +15,8 @@ import { ItemNode, measureTextHeight, type NodeHandlers } from "./board/nodes";
 import { ContextBar, PenFlyout, ShapeFlyout } from "./board/context-bar";
 import {
   FONT, INK, PRESENCE_HEX, SELECTION, SURFACE, aabb, connectorBox, connectorEnds, contains, inkHex, intersects, isBox, hitsStroke,
-  newConnector, newShape, newSticky, newStroke, newText, normBox, stickyFontSize, thinPoints,
-  type Box, type ConnectorItem, type Endpoint, type Item, type ItemPatch, type Pt, type ShapeKind,
+  anchorsOf, connectorPoints, nearestAnchor, newConnector, newShape, newSticky, newStroke, newText, normBox, stickyFontSize, thinPoints,
+  type BoxItem, type Box, type ConnectorItem, type Endpoint, type Item, type ItemPatch, type Pt, type ShapeKind,
 } from "./board/model";
 
 export type RoomProps = { board: { id: string; title: string }; me: Actor; token: string; wsUrl: string };
@@ -25,7 +25,7 @@ type View = { x: number; y: number; scale: number };
 type Draft =
   | { kind: "lasso"; start: Pt; cur: Pt; additive: boolean }
   | { kind: "shape"; start: Pt; cur: Pt }
-  | { kind: "connector"; from: Endpoint; cur: Pt }
+  | { kind: "connector"; from: Endpoint; cur: Pt; to: Endpoint }
   | { kind: "pen"; points: number[] }
   | { kind: "erase" };
 
@@ -71,6 +71,8 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
   const newTextId = useRef<string | null>(null);
   const dragStart = useRef<Map<string, Pt> | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
+  const [hoverId, setHoverId] = useState<string | null>(null); // objeto mostrando os pontos de conexão
+  const [endDrag, setEndDrag] = useState<{ which: "from" | "to"; to: Endpoint } | null>(null);
 
   const setTool = useCallback((t: Tool) => { setToolRaw(t); setDraft(null); }, []);
 
@@ -301,14 +303,24 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
   /* ----------------------------------------------------------------- ponteiro no palco (ferramentas) */
   const panning = tool === "hand" || space;
 
-  /** Item (caixa, não traço) mais no topo sob o ponto: alvo de seta. */
-  const boxUnder = useCallback((p: Pt) => {
+  /** Objeto mais no topo sob o ponto (com folga): alvo de seta. Todos os tipos, menos setas. */
+  const boxUnder = useCallback((p: Pt, pad = 0, exclude?: string | null): BoxItem | null => {
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i];
-      if (isBox(it) && it.type !== "stroke" && contains(aabb(it), p)) return it;
+      if (isBox(it) && it.id !== exclude && contains(aabb(it), p, pad)) return it;
     }
     return null;
   }, [items]);
+
+  /** Onde uma ponta de seta encaixa: num ponto de conexão (pregada), no objeto (automático) ou solta. */
+  const resolveEnd = useCallback((p: Pt, exclude?: string | null): Endpoint => {
+    const snap = nearestAnchor(items, p, 22 / view.scale, exclude);
+    if (snap) return { itemId: snap.item.id, anchor: snap.side, x: Math.round(snap.p.x), y: Math.round(snap.p.y) };
+    const it = boxUnder(p, 0, exclude);
+    return { itemId: it?.id ?? null, anchor: null, x: Math.round(p.x), y: Math.round(p.y) };
+  }, [items, view.scale, boxUnder]);
+
+  const startConnector = (from: Endpoint, p: Pt) => setDraft({ kind: "connector", from, cur: p, to: { itemId: null, x: p.x, y: p.y } });
 
   const eraseAt = (p: Pt) => {
     const r = 8 / view.scale;
@@ -340,8 +352,7 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
     } else if (tool === "shape") {
       setDraft({ kind: "shape", start: p, cur: p });
     } else if (tool === "connector") {
-      const it = boxUnder(p);
-      setDraft({ kind: "connector", from: { itemId: it?.id ?? null, x: Math.round(p.x), y: Math.round(p.y) }, cur: p });
+      startConnector(resolveEnd(p), p);
     } else if (tool === "pen") {
       if (penMode === "erase") { setDraft({ kind: "erase" }); eraseAt(p); }
       else setDraft({ kind: "pen", points: [p.x, p.y] });
@@ -350,10 +361,16 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
 
   const onStageMove = () => {
     sendCursor();
-    if (!draft) return;
     const p = pointer();
     if (!p) return;
-    if (draft.kind === "pen") setDraft({ ...draft, points: [...draft.points, p.x, p.y] });
+    // pontos de conexão aparecem no objeto sob o ponteiro enquanto se faz uma seta
+    if (tool === "connector" || draft?.kind === "connector") {
+      const h = boxUnder(p, 24 / view.scale)?.id ?? null;
+      if (h !== hoverId) setHoverId(h);
+    } else if (hoverId) setHoverId(null);
+    if (!draft) return;
+    if (draft.kind === "connector") setDraft({ ...draft, cur: p, to: resolveEnd(p, draft.from.itemId) });
+    else if (draft.kind === "pen") setDraft({ ...draft, points: [...draft.points, p.x, p.y] });
     else if (draft.kind === "erase") eraseAt(p);
     else setDraft({ ...draft, cur: p });
   };
@@ -374,10 +391,9 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
       const id = actions.add(newShape(Math.round(box.x), Math.round(box.y), Math.max(20, Math.round(box.w)), Math.max(20, Math.round(box.h)), shapeKind));
       setSel([id]); setTool("select");
     } else if (d.kind === "connector") {
-      const it = boxUnder(d.cur);
-      const to: Endpoint = { itemId: it?.id ?? null, x: Math.round(d.cur.x), y: Math.round(d.cur.y) };
-      const same = to.itemId && to.itemId === d.from.itemId;
-      if (same || Math.hypot(d.cur.x - d.from.x, d.cur.y - d.from.y) < 10) return;
+      setHoverId(null);
+      const to = resolveEnd(d.cur, d.from.itemId);
+      if (Math.hypot(d.cur.x - d.from.x, d.cur.y - d.from.y) < 10 && !to.itemId) return;
       const id = actions.add(newConnector(d.from, to));
       setSel([id]); setTool("select");
     } else if (d.kind === "pen") {
@@ -420,10 +436,24 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
   const oneConnector = selectedItems.length === 1 && selectedItems[0].type === "connector" && !selectedItems[0].locked ? (selectedItems[0] as ConnectorItem) : null;
   const moveEnd = (c: ConnectorItem, which: "from" | "to", node: Konva.Node, final: boolean) => {
     const p = { x: node.x(), y: node.y() };
-    const it = final ? boxUnder(p) : null;
-    actions.update(c.id, { [which]: { itemId: it && it.id !== c[which === "from" ? "to" : "from"].itemId ? it.id : null, x: Math.round(p.x), y: Math.round(p.y) } });
+    const other = c[which === "from" ? "to" : "from"].itemId;
+    const end = resolveEnd(p, other);
+    setHoverId(final ? null : boxUnder(p, 24 / view.scale, other)?.id ?? null);
+    setEndDrag(final ? null : { which, to: end });
+    // enquanto arrasta, a ponta fica solta sob o ponteiro; ao soltar, encaixa
+    actions.update(c.id, { [which]: final ? end : { itemId: null, anchor: null, x: Math.round(p.x), y: Math.round(p.y) } });
     if (final) { actions.stopCapturing(); setBusy(false); }
   };
+
+  /* pontos de conexão visíveis: no objeto sob o ponteiro (ao fazer seta) e no objeto selecionado */
+  const oneBox = selectedItems.length === 1 && isBox(selectedItems[0]) && !selectedItems[0].locked ? (selectedItems[0] as BoxItem) : null;
+  const dotItems: BoxItem[] = [];
+  if (canEdit) {
+    const h = hoverId ? byId.get(hoverId) : null;
+    if (h && isBox(h)) dotItems.push(h);
+    if (oneBox && tool === "select" && !editing && !busy && oneBox.id !== hoverId) dotItems.push(oneBox);
+  }
+  const snapTarget = draft?.kind === "connector" ? draft.to : endDrag?.to ?? null;
 
   /* ----------------------------------------------------------------- presença */
   const peopleForBar: Person[] = useMemo(() => {
@@ -523,7 +553,7 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
             </Layer>
 
             {/* sobreposições: seleção, seleções remotas, rascunhos */}
-            <Layer listening={!!oneConnector && tool === "select"}>
+            <Layer listening={tool === "select" && (!!oneConnector || dotItems.length > 0)}>
               {selectedItems.filter((i) => !transformable.includes(i.id)).map((i) => {
                 const b = boxOf(i, byId);
                 return <Rect key={i.id} x={b.x - 4 * sw} y={b.y - 4 * sw} width={b.w + 8 * sw} height={b.h + 8 * sw} stroke={SELECTION} strokeWidth={1.5 * sw} dash={i.locked ? [4 * sw, 3 * sw] : undefined} listening={false} />;
@@ -569,16 +599,47 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
                 return <Rect x={b.x} y={b.y} width={b.w} height={b.h} stroke={SELECTION} strokeWidth={1.5 * sw} dash={[6 * sw, 4 * sw]} cornerRadius={shapeKind === "ellipse" ? Math.min(b.w, b.h) / 2 : 6} listening={false} />;
               })()}
               {draft?.kind === "connector" && (() => {
-                const fromIt = draft.from.itemId ? byId.get(draft.from.itemId) : null;
-                const start = fromIt && isBox(fromIt) ? { x: aabb(fromIt).x + aabb(fromIt).w / 2, y: aabb(fromIt).y + aabb(fromIt).h / 2 } : draft.from;
-                const target = boxUnder(draft.cur);
+                // prévia com a mesma geometria da seta final (encaixe já resolvido)
+                const to: Endpoint = draft.to.itemId ? draft.to : { itemId: null, anchor: null, x: draft.cur.x, y: draft.cur.y };
+                const tmp = { ...newConnector(draft.from, to), id: "draft", z: 0, createdBy: "" } as ConnectorItem;
+                const { a, b, da, db } = connectorEnds(tmp, byId);
+                const { points, tension } = connectorPoints(a, b, "straight", da, db);
+                const target = draft.to.itemId && !draft.to.anchor ? byId.get(draft.to.itemId) : null;
                 return (
                   <>
-                    {target && target.id !== draft.from.itemId && (() => { const b = aabb(target); return <Rect x={b.x - 4 * sw} y={b.y - 4 * sw} width={b.w + 8 * sw} height={b.h + 8 * sw} stroke={SELECTION} strokeWidth={2 * sw} listening={false} />; })()}
-                    <Arrow points={[start.x, start.y, draft.cur.x, draft.cur.y]} stroke={INK} fill={INK} strokeWidth={2} pointerLength={12} pointerWidth={12} dash={[8, 6]} listening={false} />
+                    {target && isBox(target) && (() => { const bx = aabb(target); return <Rect x={bx.x - 4 * sw} y={bx.y - 4 * sw} width={bx.w + 8 * sw} height={bx.h + 8 * sw} stroke={SELECTION} strokeWidth={2 * sw} listening={false} />; })()}
+                    <Arrow points={points} tension={tension} stroke={INK} fill={INK} strokeWidth={2} pointerLength={12} pointerWidth={12} dash={[8, 6]} listening={false} />
                   </>
                 );
               })()}
+              {dotItems.map((it) =>
+                anchorsOf(it).map(({ side, p, dir }) => {
+                  const on = snapTarget?.itemId === it.id && snapTarget.anchor === side;
+                  // no objeto selecionado o ponto fica um pouco para fora, para não brigar com as alças de redimensionar
+                  const off = it.id === oneBox?.id && it.id !== hoverId ? 18 * sw : 0;
+                  return (
+                    <Circle
+                      key={`${it.id}-${side}`}
+                      x={p.x + dir.x * off}
+                      y={p.y + dir.y * off}
+                      radius={(on ? 7 : 5) * sw}
+                      fill={on ? SELECTION : SURFACE}
+                      stroke={SELECTION}
+                      strokeWidth={2 * sw}
+                      hitStrokeWidth={14 * sw}
+                      listening={tool === "select"}
+                      onPointerDown={(e) => {
+                        // arrastar de um ponto do objeto selecionado já começa uma seta pregada ali
+                        e.cancelBubble = true;
+                        e.evt.preventDefault();
+                        startConnector({ itemId: it.id, anchor: side, x: Math.round(p.x), y: Math.round(p.y) }, p);
+                      }}
+                      onMouseEnter={(e) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = "crosshair"; }}
+                      onMouseLeave={(e) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = ""; }}
+                    />
+                  );
+                }),
+              )}
               {draft?.kind === "pen" && <Line points={draft.points} stroke={inkHex(penColor)} strokeWidth={penWidth} lineCap="round" lineJoin="round" tension={0.4} listening={false} />}
             </Layer>
           </Stage>

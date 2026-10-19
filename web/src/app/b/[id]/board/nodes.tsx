@@ -126,8 +126,8 @@ function StrokeBody({ item }: { item: StrokeItem }) {
 }
 
 function ConnectorNode({ item, byId, h }: { item: ConnectorItem; byId: Map<string, Item>; h: NodeHandlers }) {
-  const { a, b } = connectorEnds(item, byId);
-  const { points, tension } = connectorPoints(a, b, item.path);
+  const { a, b, da, db } = connectorEnds(item, byId);
+  const { points, tension } = connectorPoints(a, b, item.path, da, db);
   const color = inkHex(item.color);
   const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   return (

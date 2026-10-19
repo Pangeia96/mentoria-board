@@ -73,3 +73,18 @@ trocar para círculo pela barra. **Por script:** um 2º participante recebe stic
 **Não verificado:** girar pela alça, rótulo da seta, pinça em aparelho real, dois navegadores lado a lado.
 
 Matriz: must-haves 15 `yes` + 6 `partial` + 1 `no` (revogar acesso, M3) de 22.
+
+## M2.1 · Pontos de conexão (2026-10-19)
+
+Pedido do usuário: todo objeto tem pontos onde a seta encaixa e fica pregada ao mover.
+
+- 4 pontos (topo, direita, baixo, esquerda) em **todos** os tipos: sticky, forma, texto e desenho, girando junto com o objeto.
+- A seta guarda `anchor` em cada ponta: pregada naquele lado. Sem `anchor` = automático (borda que mira o outro objeto), como antes.
+- Os pontos aparecem no objeto sob o ponteiro ao fazer seta (`L`) e no objeto selecionado (um pouco para fora, para não
+  brigar com as alças de redimensionar). Arrastar de um ponto do objeto selecionado já cria a seta.
+- Encaixe num raio de 22px de tela; o ponto alvo fica cheio. Funciona também ao arrastar a ponta de uma seta existente.
+- Cotovelo e curva saem perpendiculares ao lado onde estão pregados.
+
+**Verificado:** seta criada arrastando do ponto direito da elipse até o topo de um sticky: as pontas caem nos pontos
+esperados (±3px). O usuário já criou setas pregadas pelos 4 lados no quadro dele (vistas no documento).
+**Não verificado:** pontos em objeto girado, cotovelo/curva com pontos pregados (visual).

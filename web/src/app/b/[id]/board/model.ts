@@ -14,7 +14,9 @@ export type TextItem = Base & {
 /** Traço da caneta: pontos relativos a (x, y), achatados [x0, y0, x1, y1, ...]. */
 export type StrokeItem = Base & { type: "stroke"; points: number[]; color: string; width: number };
 
-export type Endpoint = { itemId: string | null; x: number; y: number };
+/** Lado do objeto onde a seta está pregada; sem anchor = "automático" (borda mirando o outro lado). */
+export type AnchorSide = "top" | "right" | "bottom" | "left";
+export type Endpoint = { itemId: string | null; x: number; y: number; anchor?: AnchorSide | null };
 export type ConnectorPath = "straight" | "elbow" | "curved";
 export type Cap = "none" | "arrow";
 /** Seta: as pontas presas a um item são recalculadas a cada desenho (acompanham o item). */
@@ -111,20 +113,81 @@ export function borderPoint(b: Box, toward: Pt, gap = 6): Pt {
   return { x: c.x + dx * t, y: c.y + dy * t };
 }
 
-/** Pontas finais da seta, resolvendo itens presos. */
-export function connectorEnds(c: ConnectorItem, byId: Map<string, Item>): { a: Pt; b: Pt } {
-  const box = (e: Endpoint) => {
-    const it = e.itemId ? byId.get(e.itemId) : undefined;
-    return it && isBox(it) ? aabb(it) : null;
+/* ----------------------------------------------------------------- pontos de conexão */
+export const SIDES: AnchorSide[] = ["top", "right", "bottom", "left"];
+const LOCAL_DIR: Record<AnchorSide, Pt> = { top: { x: 0, y: -1 }, right: { x: 1, y: 0 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 } };
+
+/** Ponto do meio de um lado do item, já girado, e a direção "para fora" daquele lado. */
+export function anchorPoint(i: BoxItem, side: AnchorSide): { p: Pt; dir: Pt } {
+  const local = { top: { x: i.w / 2, y: 0 }, right: { x: i.w, y: i.h / 2 }, bottom: { x: i.w / 2, y: i.h }, left: { x: 0, y: i.h / 2 } }[side];
+  const r = ((i.rotation || 0) * Math.PI) / 180, c = Math.cos(r), sn = Math.sin(r);
+  const d = LOCAL_DIR[side];
+  return {
+    p: { x: i.x + local.x * c - local.y * sn, y: i.y + local.x * sn + local.y * c },
+    dir: { x: d.x * c - d.y * sn, y: d.x * sn + d.y * c },
   };
-  const ba = box(c.from), bb = box(c.to);
-  const pa = ba ? center(ba) : { x: c.from.x, y: c.from.y };
-  const pb = bb ? center(bb) : { x: c.to.x, y: c.to.y };
-  return { a: ba ? borderPoint(ba, pb) : pa, b: bb ? borderPoint(bb, pa) : pb };
+}
+export const anchorsOf = (i: BoxItem) => SIDES.map((side) => ({ side, ...anchorPoint(i, side) }));
+
+/** Ponto de conexão mais perto de p (dentro do raio), em qualquer item exceto `exclude`. */
+export function nearestAnchor(items: Item[], p: Pt, radius: number, exclude?: string | null) {
+  let best: { item: BoxItem; side: AnchorSide; p: Pt; d: number } | null = null;
+  for (const it of items) {
+    if (!isBox(it) || it.id === exclude) continue;
+    if (!contains(aabb(it), p, radius)) continue;
+    for (const a of anchorsOf(it)) {
+      const d = Math.hypot(a.p.x - p.x, a.p.y - p.y);
+      if (d <= radius && (!best || d < best.d)) best = { item: it, side: a.side, p: a.p, d };
+    }
+  }
+  return best;
 }
 
-/** Pontos do caminho (para Konva Line/Arrow) conforme o tipo. */
-export function connectorPoints(a: Pt, b: Pt, path: ConnectorPath): { points: number[]; tension: number } {
+/** Direção de saída de uma caixa automática (o lado da borda mais voltado para `toward`). */
+function autoDir(b: Box, toward: Pt): Pt {
+  const c = center(b);
+  const dx = (toward.x - c.x) / (b.w || 1), dy = (toward.y - c.y) / (b.h || 1);
+  return Math.abs(dx) >= Math.abs(dy) ? { x: Math.sign(dx) || 1, y: 0 } : { x: 0, y: Math.sign(dy) || 1 };
+}
+
+export type End = { p: Pt; dir: Pt | null };
+
+/** Pontas finais da seta, resolvendo itens presos (num lado fixo ou automático). */
+export function connectorEnds(c: ConnectorItem, byId: Map<string, Item>): { a: Pt; b: Pt; da: Pt | null; db: Pt | null } {
+  const itemOf = (e: Endpoint) => {
+    const it = e.itemId ? byId.get(e.itemId) : undefined;
+    return it && isBox(it) ? it : null;
+  };
+  const ia = itemOf(c.from), ib = itemOf(c.to);
+  // o "alvo" de cada ponta: ponto fixo do outro lado ou o centro dele
+  const aim = (it: BoxItem | null, e: Endpoint): Pt => (it ? (e.anchor ? anchorPoint(it, e.anchor).p : center(aabb(it))) : { x: e.x, y: e.y });
+  const ta = aim(ia, c.from), tb = aim(ib, c.to);
+  const end = (it: BoxItem | null, e: Endpoint, other: Pt): End => {
+    if (!it) return { p: { x: e.x, y: e.y }, dir: null };
+    if (e.anchor) return anchorPoint(it, e.anchor);
+    const b = aabb(it);
+    return { p: borderPoint(b, other), dir: autoDir(b, other) };
+  };
+  const A = end(ia, c.from, tb), B = end(ib, c.to, ta);
+  return { a: A.p, b: B.p, da: A.dir, db: B.dir };
+}
+
+/** Pontos do caminho (para Konva Line/Arrow). Com direção, cotovelo e curva saem perpendiculares ao lado. */
+export function connectorPoints(a: Pt, b: Pt, path: ConnectorPath, da: Pt | null = null, db: Pt | null = null): { points: number[]; tension: number } {
+  const STUB = 28;
+  if (path === "elbow" && (da || db)) {
+    const sa = da ? { x: a.x + da.x * STUB, y: a.y + da.y * STUB } : a;
+    const sb = db ? { x: b.x + db.x * STUB, y: b.y + db.y * STUB } : b;
+    const horizontal = da ? Math.abs(da.x) > Math.abs(da.y) : Math.abs(sb.x - sa.x) >= Math.abs(sb.y - sa.y);
+    const mid = horizontal ? [ (sa.x + sb.x) / 2, sa.y, (sa.x + sb.x) / 2, sb.y ] : [ sa.x, (sa.y + sb.y) / 2, sb.x, (sa.y + sb.y) / 2 ];
+    return { points: [a.x, a.y, sa.x, sa.y, ...mid, sb.x, sb.y, b.x, b.y], tension: 0 };
+  }
+  if (path === "curved" && (da || db)) {
+    const k = Math.max(40, Math.hypot(b.x - a.x, b.y - a.y) * 0.3);
+    const ca = da ? { x: a.x + da.x * k, y: a.y + da.y * k } : a;
+    const cb = db ? { x: b.x + db.x * k, y: b.y + db.y * k } : b;
+    return { points: [a.x, a.y, ca.x, ca.y, cb.x, cb.y, b.x, b.y], tension: 0.5 };
+  }
   if (path === "elbow") {
     const horizontal = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y);
     const mid = horizontal ? (a.x + b.x) / 2 : (a.y + b.y) / 2;
