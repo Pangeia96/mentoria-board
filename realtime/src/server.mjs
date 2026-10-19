@@ -75,10 +75,14 @@ const server = new Server({
     await storage.store(boardIdOf(documentName), Y.encodeStateAsUpdate(document));
   },
 
-  /** POST /kick?board=<id> com "Authorization: Bearer <REALTIME_SECRET>": o app avisa que mudou acesso. */
+  /**
+   * Chamadas do app (com "Authorization: Bearer <REALTIME_SECRET>"):
+   *   POST /kick?board=<id>               mudou acesso: reconfere quem está no quadro agora
+   *   POST /notify?board=<id>&what=<tipo> avisa todos no quadro (ex.: comentários mudaram) por mensagem stateless
+   */
   async onRequest({ request, response }) {
     const url = new URL(request.url ?? "/", "http://x");
-    if (url.pathname !== "/kick") return;
+    if (url.pathname !== "/kick" && url.pathname !== "/notify") return;
     const given = Buffer.from(String(request.headers.authorization ?? "").replace(/^Bearer /, ""));
     const want = Buffer.from(RAW_SECRET);
     const ok = request.method === "POST" && given.length === want.length && timingSafeEqual(given, want);
@@ -87,7 +91,15 @@ const server = new Server({
       response.writeHead(ok ? 400 : 401).end();
       throw null; // eslint-disable-line no-throw-literal -- convenção do Hocuspocus: resposta já enviada
     }
-    const result = await recheck(`board:${board}`);
+    let result;
+    if (url.pathname === "/notify") {
+      const what = url.searchParams.get("what") ?? "";
+      if (!/^[a-z-]{1,32}$/.test(what)) { response.writeHead(400).end(); throw null; }
+      server.hocuspocus.documents.get(`board:${board}`)?.broadcastStateless(JSON.stringify({ type: what }));
+      result = { notified: what };
+    } else {
+      result = await recheck(`board:${board}`);
+    }
     response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(result));
     throw null; // eslint-disable-line no-throw-literal
   },

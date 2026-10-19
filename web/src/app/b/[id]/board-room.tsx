@@ -4,13 +4,16 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Arrow, Circle, Group, Layer, Line, Rect, Stage, Text, Transformer } from "react-konva";
 import type Konva from "konva";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Eye, Magnet, Users } from "lucide-react";
+import { ArrowLeft, Eye, Magnet, MessageSquare, Users } from "lucide-react";
 import { Button, Drawer, IconButton, Toaster, TooltipProvider, type ToastData } from "@/components/ui/primitives";
 import { Avatar, type Person, type PresenceColor } from "@/components/ui/board";
 import { ConnectionBanner, CreationToolbar, PeopleBar, RemoteCursor, ZoomControl, type Tool } from "@/components/ui/canvas-chrome";
 import type { Actor } from "@/lib/auth";
 import { useBoardDoc, type Viewport } from "./use-board-doc";
 import { BoardMenu } from "./board-menu";
+import { CommentPin, CommentsDrawer, NewCommentBox } from "./board/comments";
+import { createThreadAction, listThreadsAction, replyAction, resolveAction } from "../../comment-actions";
+import type { CommentThread } from "@/lib/data/types";
 import { ShareModal } from "./share-modal";
 import { ItemNode, measureTextHeight, type NodeHandlers } from "./board/nodes";
 import { ContextBar, PenFlyout, ShapeFlyout } from "./board/context-bar";
@@ -33,8 +36,8 @@ type Draft =
 
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 4;
-const TOOLS: Tool[] = ["select", "hand", "sticky", "shape", "text", "connector", "pen", "laser"];
-const CREATE_TOOLS = new Set<Tool>(["sticky", "shape", "text", "connector", "pen", "laser"]);
+const TOOLS: Tool[] = ["select", "hand", "sticky", "shape", "text", "connector", "pen", "laser", "comment"];
+const CREATE_TOOLS = new Set<Tool>(["sticky", "shape", "text", "connector", "pen", "laser", "comment"]);
 
 const boxOf = (it: Item, byId: Map<string, Item>): Box => (isBox(it) ? aabb(it) : connectorBox(it, byId));
 const union = (boxes: Box[]): Box | null => {
@@ -52,8 +55,20 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
   const [toasts, setToasts] = useState<ToastData[]>([]);
   const toast = useCallback((kind: ToastData["kind"], title: string) => setToasts((x) => [...x, { id: Date.now() + Math.random(), kind, title }]), []);
   const viewFrom = (v: Viewport): View => ({ scale: v.scale, x: sizeRef.current.w / 2 - v.cx * v.scale, y: sizeRef.current.h / 2 - v.cy * v.scale });
+  const canComment = me.role !== "viewer";
+  const [threads, setThreads] = useState<CommentThread[]>([]);
+  const [openThread, setOpenThread] = useState<string | null>(null);
+  const [composer, setComposer] = useState<{ x: number; y: number; itemId: string | null } | null>(null);
+  const [showComments, setShowComments] = useState(true);
+  const [showResolved, setShowResolved] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const loadThreads = useCallback(async () => {
+    const res = await listThreadsAction(board.id);
+    if (res.ok) setThreads(res.data);
+  }, [board.id]);
   const { items, synced, conn, justSynced, authError, peers, actions, canUndo, canRedo } = useBoardDoc({
     boardId: board.id, token, wsUrl, me,
+    onEvent: (type) => { if (type === "comments") loadThreads(); },
     onSummon: (v, by) => { setFollowing(null); setLocalView(viewFrom(v)); toast("info", `${by} trouxe você para a visão dele`); },
   });
   const byId = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
@@ -118,6 +133,13 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
   const selectedItems = useMemo(() => selected.map((id) => byId.get(id)!), [selected, byId]);
   const editing = editingRaw && byId.has(editingRaw) ? editingRaw : null;
   useEffect(() => actions.setSelection(selected), [selected, actions]);
+
+  /* comentários: carrega ao abrir; depois o servidor avisa quando mudam */
+  useEffect(() => {
+    let alive = true;
+    listThreadsAction(board.id).then((res) => { if (alive && res.ok) setThreads(res.data); });
+    return () => { alive = false; };
+  }, [board.id]);
 
   /* tamanho do palco = janela */
   useEffect(() => {
@@ -283,6 +305,8 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
       if (k === "v") setTool("select");
       else if (k === "h") setTool("hand");
       else if (k === "k") setTool("laser");
+      else if (k === "c" && e.shiftKey) setShowComments((v) => !v);
+      else if (k === "c" && canComment) setTool("comment");
       else if (!canEdit) return;
       else if (k === "n") setTool("sticky");
       else if (k === "s") setTool("shape");
@@ -300,7 +324,7 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
     return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
-  }, [actions, canEdit, items, selected, selectedItems, fit, zoomAt, view.scale, size, duplicate, deleteSelection, patchSelection, startEditing, setTool]);
+  }, [actions, canEdit, canComment, items, selected, selectedItems, fit, zoomAt, view.scale, size, duplicate, deleteSelection, patchSelection, startEditing, setTool]);
 
   /* ----------------------------------------------------------------- roda, pinça, cursor */
   const onWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
@@ -375,6 +399,13 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
       setEditing(null);
       if (!e.evt.shiftKey) setSel([]);
       setDraft({ kind: "lasso", start: p, cur: p, additive: e.evt.shiftKey });
+      return;
+    }
+    if (tool === "comment") {
+      if (!canComment) return;
+      e.evt.preventDefault();
+      setOpenThread(null);
+      setComposer({ x: Math.round(p.x), y: Math.round(p.y), itemId: boxUnder(p)?.id ?? null });
       return;
     }
     if (tool === "laser") {
@@ -536,6 +567,44 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
     return () => clearInterval(id);
   }, [actions, laserColor]);
   const remoteLasers: RemoteLaser[] = peers.filter((p) => p.laser && p.laserAt).map((p) => ({ clientId: p.clientId, laser: p.laser!, receivedAt: p.laserAt! }));
+
+  /* comentários: posição do pino (canto do objeto, se preso a um) */
+  const pinWorld = (t: { itemId: string | null; x: number; y: number }) => {
+    const it = t.itemId ? byId.get(t.itemId) : undefined;
+    if (it && isBox(it)) { const b = aabb(it); return { x: b.x + b.w, y: b.y }; }
+    return { x: t.x, y: t.y };
+  };
+  const visibleThreads = showComments ? threads.filter((t) => showResolved || !t.resolvedAt || t.id === openThread) : [];
+  const sendNew = async (body: string) => {
+    if (!composer) return false;
+    const res = await createThreadAction(board.id, { ...composer, body });
+    if (!res.ok) { toast("error", res.error); return false; }
+    setComposer(null);
+    setTool("select");
+    setThreads((ts) => [res.data, ...ts.filter((t) => t.id !== res.data.id)]);
+    setOpenThread(res.data.id);
+    return true;
+  };
+  const reply = (threadId: string) => async (body: string) => {
+    const res = await replyAction(board.id, threadId, body);
+    if (!res.ok) { toast("error", res.error); return false; }
+    await loadThreads();
+    return true;
+  };
+  const resolve = (threadId: string) => async (resolved: boolean) => {
+    const res = await resolveAction(board.id, threadId, resolved);
+    if (!res.ok) return toast("error", res.error);
+    if (resolved) setOpenThread(null);
+    await loadThreads();
+  };
+  const pickThread = (t: CommentThread) => {
+    const w = pinWorld(t);
+    setView((v) => ({ ...v, x: size.w / 2 - w.x * v.scale, y: size.h / 2 - w.y * v.scale }));
+    setShowComments(true);
+    if (t.resolvedAt) setShowResolved(true);
+    setOpenThread(t.id);
+    setCommentsOpen(false);
+  };
 
   /* mantém a barra de opções dentro da tela e fora da barra de ferramentas (mexe só no DOM, sem estado) */
   useLayoutEffect(() => {
@@ -721,6 +790,24 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
           return <RemoteCursor key={p.clientId} person={{ id: p.user.id, name: p.user.name, color: p.user.color as PresenceColor }} x={s.x} y={s.y} />;
         })}
 
+        {/* comentários */}
+        {visibleThreads.map((t) => {
+          const s = toScreen(pinWorld(t).x, pinWorld(t).y);
+          return (
+            <CommentPin
+              key={t.id}
+              thread={t}
+              at={s}
+              open={openThread === t.id}
+              onOpenChange={(v) => setOpenThread(v ? t.id : null)}
+              canComment={canComment}
+              onReply={reply(t.id)}
+              onResolve={resolve(t.id)}
+            />
+          );
+        })}
+        {composer && <NewCommentBox at={toScreen(composer.x, composer.y)} onSend={sendNew} onCancel={() => setComposer(null)} />}
+
         {/* edição de texto sobre o canvas */}
         {editingItem && editingItem.type !== "stroke" && (
           <TextEditor
@@ -773,12 +860,17 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
           </div>
 
           <div className="pointer-events-auto absolute left-3 top-1/2 flex -translate-y-1/2 items-start gap-2">
-            <CreationToolbar tool={tool} onTool={setTool} canEdit={canEdit} tools={TOOLS} onUndo={actions.undo} onRedo={actions.redo} canUndo={canUndo} canRedo={canRedo} />
+            <CreationToolbar tool={tool} onTool={setTool} canEdit={canEdit} tools={canComment ? TOOLS : TOOLS.filter((t) => t !== "comment")} onUndo={actions.undo} onRedo={actions.redo} canUndo={canUndo} canRedo={canRedo} />
             {tool === "shape" && <ShapeFlyout value={shapeKind} onChange={setShapeKind} />}
             {tool === "pen" && <PenFlyout mode={penMode} color={penColor} width={penWidth} onMode={setPenMode} onColor={setPenColor} onWidth={setPenWidth} />}
           </div>
 
-          <div className="pointer-events-auto absolute right-3 top-3">
+          <div className="pointer-events-auto absolute right-3 top-3 flex items-start gap-2">
+            <div className="rounded-lg bg-surface p-1 shadow-md">
+              <IconButton label={`Comentários (${threads.filter((t) => !t.resolvedAt).length})`} shortcut="Shift+C esconde" tooltipSide="bottom" pressed={commentsOpen} onClick={() => setCommentsOpen(true)}>
+                <MessageSquare />
+              </IconButton>
+            </div>
             <PeopleBar
               people={peopleForBar}
               onOpenPeople={() => setPeopleOpen(true)}
@@ -818,6 +910,8 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
           )}
         </div>
       </div>
+
+      <CommentsDrawer open={commentsOpen} onOpenChange={setCommentsOpen} threads={threads} showResolved={showResolved} onShowResolved={setShowResolved} onPick={pickThread} />
 
       <Drawer open={peopleOpen} onOpenChange={setPeopleOpen} title={`No quadro agora (${1 + peers.filter((p, i, a) => a.findIndex((q) => q.user.id === p.user.id) === i && p.user.id !== me.id).length})`}>
         <ul className="flex flex-col gap-1">

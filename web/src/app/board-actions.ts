@@ -6,6 +6,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { data, type LinkRole } from "@/lib/data";
 import { currentUser } from "@/lib/auth";
+import { realtimeCall } from "@/lib/realtime";
 
 const Id = z.string().uuid();
 const Role = z.enum(["editor", "commenter", "viewer"]);
@@ -35,19 +36,7 @@ async function guard<T>(fn: () => Promise<T>): Promise<Result<T>> {
   }
 }
 
-/** Pede ao servidor de tempo real para reconferir agora quem está no quadro. Se falhar, o recheck periódico cobre. */
-async function kick(boardId: string) {
-  const base = process.env.REALTIME_HTTP_URL ?? (process.env.NEXT_PUBLIC_REALTIME_URL ?? "ws://localhost:1234").replace(/^ws/, "http");
-  try {
-    await fetch(`${base}/kick?board=${boardId}`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${process.env.REALTIME_SECRET ?? "dev-only-secret-change-me-0123456789"}` },
-      signal: AbortSignal.timeout(3000),
-    });
-  } catch {
-    console.error("[kick] servidor de tempo real não respondeu");
-  }
-}
+const kick = (boardId: string) => realtimeCall("kick", boardId);
 
 async function origin() {
   if (process.env.APP_URL) return process.env.APP_URL;

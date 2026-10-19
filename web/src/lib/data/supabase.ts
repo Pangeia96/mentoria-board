@@ -3,7 +3,8 @@
 // (o visitante nunca fala direto com o Supabase; ver architecture.md §2).
 import "server-only";
 import { adminClient, userClient } from "../supabase/server";
-import type { Board, DataLayer, Guest, Profile, Role, ShareLink } from "./types";
+import { colorFor } from "../colors";
+import type { Asset, Author, Board, Comment, CommentThread, DataLayer, Guest, Profile, Role, ShareLink } from "./types";
 
 type Row = Record<string, unknown>;
 const s = (v: unknown) => (v == null ? null : String(v));
@@ -19,6 +20,25 @@ const toLink = (r: Row): ShareLink => ({
 const toGuest = (r: Row): Guest => ({
   id: String(r.id), boardId: String(r.board_id), shareLinkId: String(r.share_link_id), displayName: String(r.display_name),
   color: String(r.color), revokedAt: s(r.revoked_at), createdAt: String(r.created_at),
+});
+
+const toComment = (r: Row): Comment => {
+  const guest = r.board_guests as Row | null;
+  const author: Author = r.author_guest
+    ? { kind: "guest", id: String(r.author_guest), name: String(r.author_name), color: String(guest?.color ?? "p8") }
+    : { kind: "user", id: String(r.author_user ?? ""), name: String(r.author_name), color: colorFor(String(r.author_user ?? r.id)) };
+  return { id: String(r.id), threadId: String(r.thread_id), author, body: String(r.body), createdAt: String(r.created_at) };
+};
+const toThread = (r: Row): CommentThread => ({
+  id: String(r.id), boardId: String(r.board_id), itemId: s(r.item_id), x: Number(r.x), y: Number(r.y), resolvedAt: s(r.resolved_at), createdAt: String(r.created_at),
+  comments: ((r.comments as Row[]) ?? []).map(toComment).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+});
+const authorCols = (a: Author) => (a.kind === "user" ? { author_user: a.id } : { author_guest: a.id });
+const EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" };
+const BUCKET = "board-assets";
+const toAsset = (r: Row): Asset => ({
+  id: String(r.id), boardId: String(r.board_id), mimeType: String(r.mime_type), sizeBytes: Number(r.size_bytes),
+  width: r.width == null ? null : Number(r.width), height: r.height == null ? null : Number(r.height), createdAt: String(r.created_at),
 });
 
 function fail(e: { message: string; code?: string } | null, what: string): never {
@@ -168,5 +188,68 @@ export const supabaseData: DataLayer = {
     const sb = await userClient();
     const { error } = await sb.from("boards").update({ deleted_at: new Date().toISOString() }).eq("id", id);
     if (error) fail(error, "mover o quadro para a lixeira");
+  },
+
+  // Comentários e imagens usam o cliente de serviço: visitantes sem conta também comentam.
+  // A server action confere o papel do actor no quadro antes de chamar qualquer um destes.
+  async listThreads(boardId) {
+    const { data, error } = await adminClient().from("comment_threads")
+      .select("*, comments(*, board_guests(color))").eq("board_id", boardId).order("created_at", { ascending: false });
+    if (error) fail(error, "carregar os comentários");
+    return (data ?? []).map(toThread);
+  },
+
+  async createThread(input) {
+    const sb = adminClient();
+    const created = input.author.kind === "user" ? { created_by_user: input.author.id } : { created_by_guest: input.author.id };
+    const { data: t, error } = await sb.from("comment_threads")
+      .insert({ board_id: input.boardId, item_id: input.itemId, x: input.x, y: input.y, ...created }).select("*").single();
+    if (error) fail(error, "criar o comentário");
+    const { data: c, error: e2 } = await sb.from("comments")
+      .insert({ thread_id: t.id, author_name: input.author.name, body: input.body, ...authorCols(input.author) }).select("*, board_guests(color)").single();
+    if (e2) fail(e2, "criar o comentário");
+    return toThread({ ...t, comments: [c] });
+  },
+
+  async addComment(input) {
+    const { data, error } = await adminClient().from("comments")
+      .insert({ thread_id: input.threadId, author_name: input.author.name, body: input.body, ...authorCols(input.author) }).select("*, board_guests(color)").single();
+    if (error) fail(error, "responder");
+    return toComment(data);
+  },
+
+  async getThread(id) {
+    const { data } = await adminClient().from("comment_threads").select("*, comments(*, board_guests(color))").eq("id", id).maybeSingle();
+    return data ? toThread(data) : null;
+  },
+
+  async setThreadResolved(id, resolved) {
+    const { error } = await adminClient().from("comment_threads").update({ resolved_at: resolved ? new Date().toISOString() : null }).eq("id", id);
+    if (error) fail(error, "resolver o comentário");
+  },
+
+  async saveAsset(input) {
+    const ext = EXT[input.mimeType];
+    if (!ext) throw new Error("Tipo de imagem não aceito.");
+    const sb = adminClient();
+    const id = crypto.randomUUID();
+    const path = `${input.boardId}/${id}.${ext}`;
+    const up = await sb.storage.from(BUCKET).upload(path, input.bytes, { contentType: input.mimeType, upsert: false });
+    if (up.error) fail({ message: up.error.message }, "enviar a imagem");
+    const uploader = input.author.kind === "user" ? { uploaded_by_user: input.author.id } : { uploaded_by_guest: input.author.id };
+    const { data, error } = await sb.from("board_assets").insert({
+      id, board_id: input.boardId, storage_path: path, mime_type: input.mimeType, size_bytes: input.bytes.byteLength, width: input.width, height: input.height, ...uploader,
+    }).select("*").single();
+    if (error) fail(error, "salvar a imagem");
+    return toAsset(data);
+  },
+
+  async readAsset(boardId, id) {
+    const sb = adminClient();
+    const { data } = await sb.from("board_assets").select("*").eq("id", id).eq("board_id", boardId).maybeSingle();
+    if (!data) return null;
+    const file = await sb.storage.from(BUCKET).download(String(data.storage_path));
+    if (file.error || !file.data) return null;
+    return { asset: toAsset(data), bytes: new Uint8Array(await file.data.arrayBuffer()) };
   },
 };

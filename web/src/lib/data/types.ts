@@ -35,6 +35,22 @@ export type Guest = {
   createdAt: string;
 };
 
+export type Author = { kind: "user" | "guest"; id: string; name: string; color: string };
+
+export type Comment = { id: string; threadId: string; author: Author; body: string; createdAt: string };
+export type CommentThread = {
+  id: string;
+  boardId: string;
+  itemId: string | null; // preso a um objeto do quadro (id no Yjs) ou solto no ponto (x, y)
+  x: number;
+  y: number;
+  resolvedAt: string | null;
+  createdAt: string;
+  comments: Comment[];
+};
+
+export type Asset = { id: string; boardId: string; mimeType: string; sizeBytes: number; width: number | null; height: number | null; createdAt: string };
+
 /** Contrato da camada de dados. A versão fake (JSON) e a do Supabase implementam o mesmo. */
 export interface DataLayer {
   /** Só na camada fake (login de dev). No Supabase o perfil nasce pelo trigger do auth.users. */
@@ -64,4 +80,16 @@ export interface DataLayer {
   /** Copia o quadro e o conteúdo (doc Yjs); o dono da cópia é quem duplicou. */
   duplicateBoard(id: string, ownerId: string): Promise<Board>;
   trashBoard(id: string): Promise<void>;
+
+  /* comentários: a autorização (papel do actor) é feita na server action, antes de chamar */
+  listThreads(boardId: string): Promise<CommentThread[]>;
+  createThread(input: { boardId: string; itemId: string | null; x: number; y: number; author: Author; body: string }): Promise<CommentThread>;
+  addComment(input: { threadId: string; author: Author; body: string }): Promise<Comment>;
+  getThread(id: string): Promise<CommentThread | null>;
+  setThreadResolved(id: string, resolved: boolean): Promise<void>;
+
+  /* imagens no quadro */
+  saveAsset(input: { boardId: string; mimeType: string; bytes: Uint8Array; width: number | null; height: number | null; author: Author }): Promise<Asset>;
+  /** Arquivo de um asset (só depois de conferir acesso ao quadro). */
+  readAsset(boardId: string, id: string): Promise<{ asset: Asset; bytes: Uint8Array } | null>;
 }

@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import { data, type Role } from "./data";
 import { hasSupabase, userClient } from "./supabase/server";
+import { colorFor } from "./colors";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const SESSION_SECRET = enc(process.env.SESSION_SECRET ?? "dev-only-session-secret-0123456789abcdef");
@@ -60,8 +61,7 @@ async function currentGuest(boardId: string) {
 /* ------------------------------------------------------------ quem está abrindo o quadro */
 export type Actor = { id: string; kind: "user" | "guest"; name: string; color: string; role: Role };
 
-const PRESENCE = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"];
-export const colorFor = (id: string) => PRESENCE[[...id].reduce((a, c) => a + c.charCodeAt(0), 0) % PRESENCE.length];
+export { colorFor } from "./colors";
 
 /** Mentor/membro tem prioridade; senão, visitante com cookie válido e link ainda ativo. */
 export async function actorForBoard(boardId: string): Promise<Actor | null> {

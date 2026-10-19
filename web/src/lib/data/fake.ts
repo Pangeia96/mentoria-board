@@ -4,13 +4,19 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { Board, DataLayer, Guest, Profile, Role, ShareLink } from "./types";
+import type { Asset, Board, Comment, CommentThread, DataLayer, Guest, Profile, Role, ShareLink } from "./types";
 
 type Member = { boardId: string; userId: string; role: Role };
-type Db = { profiles: Profile[]; boards: Board[]; members: Member[]; links: ShareLink[]; guests: Guest[] };
+type ThreadRow = Omit<CommentThread, "comments">;
+type Db = {
+  profiles: Profile[]; boards: Board[]; members: Member[]; links: ShareLink[]; guests: Guest[];
+  threads?: ThreadRow[]; comments?: Comment[]; assets?: Asset[];
+};
 
 const FILE = process.env.DEV_DB_FILE ?? join(process.cwd(), "..", ".data", "dev-db.json");
 const DOCS = join(dirname(FILE), "docs"); // onde o servidor de tempo real (modo dev) grava os docs Yjs
+const ASSETS = join(dirname(FILE), "assets");
+const EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" };
 const now = () => new Date().toISOString();
 
 let queue: Promise<unknown> = Promise.resolve();
@@ -181,4 +187,61 @@ export const fakeData: DataLayer = {
       const b = db.boards.find((x) => x.id === id);
       if (b && !b.deletedAt) b.deletedAt = now();
     }, true),
+
+  listThreads: (boardId) =>
+    tx((db) =>
+      (db.threads ?? []).filter((t) => t.boardId === boardId)
+        .map((t) => ({ ...t, comments: (db.comments ?? []).filter((c) => c.threadId === t.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt)) }))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    ),
+
+  createThread: (input) =>
+    tx((db) => {
+      const t: ThreadRow = { id: randomUUID(), boardId: input.boardId, itemId: input.itemId, x: input.x, y: input.y, resolvedAt: null, createdAt: now() };
+      const c: Comment = { id: randomUUID(), threadId: t.id, author: input.author, body: input.body, createdAt: now() };
+      (db.threads ??= []).push(t);
+      (db.comments ??= []).push(c);
+      return { ...t, comments: [c] };
+    }, true),
+
+  addComment: (input) =>
+    tx((db) => {
+      const c: Comment = { id: randomUUID(), threadId: input.threadId, author: input.author, body: input.body, createdAt: now() };
+      (db.comments ??= []).push(c);
+      return c;
+    }, true),
+
+  getThread: (id) =>
+    tx((db) => {
+      const t = (db.threads ?? []).find((x) => x.id === id);
+      return t ? { ...t, comments: (db.comments ?? []).filter((c) => c.threadId === id) } : null;
+    }),
+
+  setThreadResolved: (id, resolved) =>
+    tx((db) => {
+      const t = (db.threads ?? []).find((x) => x.id === id);
+      if (t) t.resolvedAt = resolved ? now() : null;
+    }, true),
+
+  saveAsset: (input) =>
+    tx(async (db) => {
+      const ext = EXT[input.mimeType];
+      if (!ext) throw new Error("Tipo de imagem não aceito.");
+      const a: Asset = { id: randomUUID(), boardId: input.boardId, mimeType: input.mimeType, sizeBytes: input.bytes.byteLength, width: input.width, height: input.height, createdAt: now() };
+      await mkdir(ASSETS, { recursive: true });
+      await writeFile(join(ASSETS, `${a.id}.${ext}`), input.bytes);
+      (db.assets ??= []).push(a);
+      return a;
+    }, true),
+
+  readAsset: (boardId, id) =>
+    tx(async (db) => {
+      const a = (db.assets ?? []).find((x) => x.id === id && x.boardId === boardId);
+      if (!a) return null;
+      try {
+        return { asset: a, bytes: new Uint8Array(await readFile(join(ASSETS, `${a.id}.${EXT[a.mimeType]}`))) };
+      } catch {
+        return null;
+      }
+    }),
 };

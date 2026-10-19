@@ -32,13 +32,16 @@ export type RemotePeer = PresenceState & { clientId: number; laserAt?: number };
 
 export type ConnState = "connecting" | "connected" | "reconnecting" | "offline";
 
-export function useBoardDoc({ boardId, token, wsUrl, me, onSummon }: {
+export function useBoardDoc({ boardId, token, wsUrl, me, onSummon, onEvent }: {
   boardId: string; token: string; wsUrl: string; me: Actor;
+  /** Avisos do servidor (ex.: "comments" quando alguém comenta). */
+  onEvent?: (type: string) => void;
   /** Chamado quando outra pessoa traz esta para a visão dela. */
   onSummon?: (view: Viewport, by: string) => void;
 }) {
   const onSummonRef = useRef(onSummon);
-  useEffect(() => { onSummonRef.current = onSummon; });
+  const onEventRef = useRef(onEvent);
+  useEffect(() => { onSummonRef.current = onSummon; onEventRef.current = onEvent; });
   const [myClientId, setMyClientId] = useState<number | null>(null);
   const doc = useMemo(() => new Y.Doc(), []);
   const items = useMemo(() => doc.getMap<Y.Map<unknown>>("items"), [doc]);
@@ -80,6 +83,14 @@ export function useBoardDoc({ boardId, token, wsUrl, me, onSummon }: {
       },
       onSynced: () => setSynced(true),
       onAuthenticationFailed: ({ reason }) => setAuthError(reason || "Acesso negado"),
+      onStateless: ({ payload }) => {
+        try {
+          const msg = JSON.parse(payload) as { type?: string };
+          if (msg.type) onEventRef.current?.(msg.type);
+        } catch {
+          /* mensagem desconhecida: ignora */
+        }
+      },
     });
     p.awareness?.setLocalStateField("user", { id: me.id, name: me.name, color: me.color, kind: me.kind });
 
