@@ -88,3 +88,24 @@ Pedido do usuário: todo objeto tem pontos onde a seta encaixa e fica pregada ao
 **Verificado:** seta criada arrastando do ponto direito da elipse até o topo de um sticky: as pontas caem nos pontos
 esperados (±3px). O usuário já criou setas pregadas pelos 4 lados no quadro dele (vistas no documento).
 **Não verificado:** pontos em objeto girado, cotovelo/curva com pontos pregados (visual).
+
+## M3 · Acesso e sessão ao vivo (2026-10-19)
+
+| tela | status | o que falta | o que foi mais difícil que o esperado |
+| --- | --- | --- | --- |
+| S05 Compartilhar | done | convite por e-mail (could) | — |
+| S09 Pessoas | done | — | "seguir" sem effect com setState: a visão é derivada da visão publicada pela pessoa |
+| S10 Menu do quadro | done | restaurar da lixeira | o menu do Radix devolvia o foco ao gatilho e roubava o foco do modal: o modal abre no tick seguinte |
+| S02 Painel (menu ⋯) | done | thumbnail | — |
+| Tempo real | done | — | expulsar quem já está dentro: o servidor reconfere no banco a cada 30s e o app chama `POST /kick` na hora |
+
+**Verificado** (num quadro de teste, sem mexer no quadro do usuário):
+- papel do link "Só ver" vale na hora: uma visitante que entrou como editora e escreveu depois da troca teve a escrita descartada;
+- "Remover" expulsa na hora (o servidor fechou a conexão com "acesso removido") e a contagem de pessoas caiu;
+- "Seguir" acompanha a visão da outra pessoa (posição e zoom); "Trazer todos" leva para a visão dela e para de seguir;
+- renomear, duplicar (copia o conteúdo) e mover para a lixeira (volta ao painel, some da lista).
+
+**Não verificado:** as mesmas ações no modo Supabase (o projeto ainda não existe); "trazer uma pessoa" (só "trazer todos");
+a tela de "acesso removido" no navegador de quem foi expulso.
+
+Matriz: must-haves 19 `yes` + 3 `partial` de 22.

@@ -24,10 +24,10 @@ Sem as chaves no `.env.local`, tudo cai no modo dev (JSON + arquivos em `.data/`
 - [x] Link mágico por e-mail (cria a conta no 1º acesso; sem senha para esquecer, então não há reset de senha)
 - [x] Google OAuth com o app do próprio usuário (opcional)
 - [x] Sessão em cookies http-only (`@supabase/ssr`), renovada no `proxy.ts`; `getUser()` valida no servidor
-- [x] Sair (`signOut`) · [ ] "sair de todos os dispositivos" (M3, `scope: "global"`)
+- [x] Sair (`signOut`) · [ ] "sair de todos os dispositivos" (`scope: "global"`)
 - [x] Papéis por quadro: owner / editor / commenter / viewer (`board_members`, `share_links.role`)
 - [x] Visitante sem conta: cookie assinado por quadro + `board_guests` (pode ser revogado)
-- [ ] Excluir conta de verdade (M3: apaga auth.users → cascade em profiles/boards/tudo)
+- [ ] Excluir conta de verdade (apaga auth.users → cascade em profiles/boards/tudo)
 
 ## Banco
 
@@ -57,8 +57,8 @@ Nenhuma no recorte. Google é só login (escopos básicos).
 - [x] Segredos só em env vars; `.env*` no `.gitignore`; nada secreto no bundle (`server-only` nos clientes)
 - [x] Entrada validada no servidor com zod em todas as server actions; ids conferidos por regex/uuid
 - [x] Autorização em toda leitura/escrita: RLS (mentor) ou checagem explícita (visitante) + papel reconferido
-      no banco a cada conexão do tempo real
-- [~] Rate limit: o Supabase Auth limita o envio de links; o `/j/*` ainda não tem limite próprio (M3)
+      no banco ao conectar, a cada 30s e na hora via `POST /kick` (protegido pelo REALTIME_SECRET)
+- [x] Rate limit: o Supabase Auth limita o envio de links; entrar pelo link `/j/*` tem limite de 20/min por IP (em memória, por instância)
 - [n/a] Webhooks (nenhum ainda)
 - [~] Uploads: limites no schema (10 MB, tipos de imagem); bucket privado entra no M4
 - [x] Sem dados pessoais em URL (o token do link é aleatório) nem em log (logs só com código de erro)

@@ -6,7 +6,10 @@ import * as Y from "yjs";
 
 const [board] = process.argv.slice(2);
 const secret = new TextEncoder().encode(process.env.REALTIME_SECRET ?? "dev-only-secret-change-me-0123456789");
-const token = await new SignJWT({ sub: crypto.randomUUID(), kind: "guest", name: "Observador", color: "p8", role: "viewer", board })
+// entra como o dono do quadro (modo dev lê o .data/dev-db.json)
+const db = JSON.parse(await (await import("node:fs/promises")).readFile(new URL("../../.data/dev-db.json", import.meta.url), "utf8"));
+const owner = db.members.find((m) => m.boardId === board && m.role === "owner");
+const token = await new SignJWT({ sub: owner.userId, kind: "user", name: "Observador", color: "p8", role: "owner", board })
   .setProtectedHeader({ alg: "HS256" }).setIssuedAt().setExpirationTime("5m").sign(secret);
 
 const doc = new Y.Doc();

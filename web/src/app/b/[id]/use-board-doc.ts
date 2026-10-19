@@ -14,16 +14,28 @@ export type { Item } from "./board/model";
 /** Itens antigos (M1) não tinham rotation/locked: completa com padrões ao ler. */
 const normalize = (raw: Record<string, unknown>, id: string): Item => ({ rotation: 0, locked: false, ...raw, id }) as Item;
 
+/** Visão de alguém no quadro: centro (mundo) e zoom. */
+export type Viewport = { cx: number; cy: number; scale: number };
 export type PresenceState = {
   user: { id: string; name: string; color: string; kind: Actor["kind"] };
   cursor?: { x: number; y: number } | null;
   selection?: string[];
+  viewport?: Viewport;
+  /** "Trazer para mim": ts único, a visão de destino e quem deve vir (null = todos). */
+  summon?: { ts: number; view: Viewport; target: number | null } | null;
 };
 export type RemotePeer = PresenceState & { clientId: number };
 
 export type ConnState = "connecting" | "connected" | "reconnecting" | "offline";
 
-export function useBoardDoc({ boardId, token, wsUrl, me }: { boardId: string; token: string; wsUrl: string; me: Actor }) {
+export function useBoardDoc({ boardId, token, wsUrl, me, onSummon }: {
+  boardId: string; token: string; wsUrl: string; me: Actor;
+  /** Chamado quando outra pessoa traz esta para a visão dela. */
+  onSummon?: (view: Viewport, by: string) => void;
+}) {
+  const onSummonRef = useRef(onSummon);
+  useEffect(() => { onSummonRef.current = onSummon; });
+  const [myClientId, setMyClientId] = useState<number | null>(null);
   const doc = useMemo(() => new Y.Doc(), []);
   const items = useMemo(() => doc.getMap<Y.Map<unknown>>("items"), [doc]);
   const undo = useMemo(() => new Y.UndoManager(items, { trackedOrigins: new Set([LOCAL]), captureTimeout: 400 }), [items]);
@@ -67,10 +79,20 @@ export function useBoardDoc({ boardId, token, wsUrl, me }: { boardId: string; to
     });
     p.awareness?.setLocalStateField("user", { id: me.id, name: me.name, color: me.color, kind: me.kind });
 
+    const seenSummons = new Set<number>();
+    const startedAt = Date.now();
     const readPeers = () => {
       const out: RemotePeer[] = [];
       p.awareness?.getStates().forEach((s, clientId) => {
-        if (clientId !== p.awareness?.clientID && (s as PresenceState).user) out.push({ ...(s as PresenceState), clientId });
+        const st = s as PresenceState;
+        if (clientId === p.awareness?.clientID || !st.user) return;
+        out.push({ ...st, clientId });
+        // um "trazer para mim" novo de outra pessoa, para todos ou para mim, feito depois que entrei
+        const sm = st.summon;
+        if (sm && !seenSummons.has(sm.ts)) {
+          seenSummons.add(sm.ts);
+          if (sm.ts > startedAt && (sm.target === null || sm.target === p.awareness?.clientID)) onSummonRef.current?.(sm.view, st.user.name);
+        }
       });
       setPeers(out);
     };
@@ -78,6 +100,7 @@ export function useBoardDoc({ boardId, token, wsUrl, me }: { boardId: string; to
     const goOffline = () => { dropped = true; setConn("offline"); };
     window.addEventListener("offline", goOffline);
     providerRef.current = p;
+    setMyClientId(p.awareness?.clientID ?? null);
     return () => {
       window.removeEventListener("offline", goOffline);
       p.awareness?.off("change", readPeers);
@@ -184,9 +207,15 @@ export function useBoardDoc({ boardId, token, wsUrl, me }: { boardId: string; to
       setSelection(ids: string[]) {
         providerRef.current?.awareness?.setLocalStateField("selection", ids);
       },
+      setViewport(v: Viewport) {
+        providerRef.current?.awareness?.setLocalStateField("viewport", v);
+      },
+      summon(view: Viewport, target: number | null) {
+        providerRef.current?.awareness?.setLocalStateField("summon", { ts: Date.now(), view, target });
+      },
     }),
     [doc, items, undo, me.id],
   );
 
-  return { items: snapshot, synced, conn, justSynced, authError, peers, actions, ...undoState };
+  return { items: snapshot, synced, conn, justSynced, authError, peers, myClientId, actions, ...undoState };
 }

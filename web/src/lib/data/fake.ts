@@ -2,7 +2,7 @@
 // Mesmas regras do schema.sql (1 link ativo por quadro, dono vira membro owner, título 1–120).
 // Será trocada pela implementação Supabase no /replica-backend sem mudar nenhuma tela.
 import { randomBytes, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { Board, DataLayer, Guest, Profile, Role, ShareLink } from "./types";
 
@@ -10,6 +10,7 @@ type Member = { boardId: string; userId: string; role: Role };
 type Db = { profiles: Profile[]; boards: Board[]; members: Member[]; links: ShareLink[]; guests: Guest[] };
 
 const FILE = process.env.DEV_DB_FILE ?? join(process.cwd(), "..", ".data", "dev-db.json");
+const DOCS = join(dirname(FILE), "docs"); // onde o servidor de tempo real (modo dev) grava os docs Yjs
 const now = () => new Date().toISOString();
 
 let queue: Promise<unknown> = Promise.resolve();
@@ -122,4 +123,62 @@ export const fakeData: DataLayer = {
     }, true),
 
   getGuest: (id) => tx((db) => db.guests.find((g) => g.id === id) ?? null),
+
+  updateShareLink: (id, patch) =>
+    tx((db) => {
+      const l = db.links.find((x) => x.id === id);
+      if (!l) throw new Error("Link não encontrado.");
+      if (patch.role) l.role = patch.role;
+      if (patch.askVisitorName !== undefined) l.askVisitorName = patch.askVisitorName;
+      return l;
+    }, true),
+
+  disableShareLink: (id) =>
+    tx((db) => {
+      const l = db.links.find((x) => x.id === id);
+      if (l) l.enabled = false;
+    }, true),
+
+  listGuests: (boardId) =>
+    tx((db) => {
+      const active = new Set(db.links.filter((l) => l.boardId === boardId && l.enabled).map((l) => l.id));
+      return db.guests.filter((g) => g.boardId === boardId && !g.revokedAt && active.has(g.shareLinkId)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    }),
+
+  revokeGuest: (id) =>
+    tx((db) => {
+      const g = db.guests.find((x) => x.id === id);
+      if (g && !g.revokedAt) g.revokedAt = now();
+    }, true),
+
+  renameBoard: (id, title) =>
+    tx((db) => {
+      const b = db.boards.find((x) => x.id === id && !x.deletedAt);
+      if (!b) throw new Error("Quadro não encontrado.");
+      b.title = checkTitle(title);
+      b.updatedAt = now();
+      return b;
+    }, true),
+
+  duplicateBoard: (id, ownerId) =>
+    tx(async (db) => {
+      const src = db.boards.find((x) => x.id === id && !x.deletedAt);
+      if (!src) throw new Error("Quadro não encontrado.");
+      const title = `${src.title} (cópia)`.slice(0, 120);
+      const b: Board = { ...src, id: randomUUID(), ownerId, title, deletedAt: null, createdAt: now(), updatedAt: now() };
+      db.boards.push(b);
+      db.members.push({ boardId: b.id, userId: ownerId, role: "owner" });
+      try {
+        await copyFile(join(DOCS, `${src.id}.bin`), join(DOCS, `${b.id}.bin`));
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; // quadro vazio: nada a copiar
+      }
+      return b;
+    }, true),
+
+  trashBoard: (id) =>
+    tx((db) => {
+      const b = db.boards.find((x) => x.id === id);
+      if (b && !b.deletedAt) b.deletedAt = now();
+    }, true),
 };

@@ -50,6 +50,18 @@ export interface DataLayer {
   getShareLinkByToken(token: string): Promise<ShareLink | null>;
   getShareLinkById(id: string): Promise<ShareLink | null>;
 
+  updateShareLink(id: string, patch: { role?: LinkRole; askVisitorName?: boolean }): Promise<ShareLink>;
+  /** Desativa o link (quem entrou por ele perde acesso). O próximo getOrCreateShareLink gera outro token. */
+  disableShareLink(id: string): Promise<void>;
+
   createGuest(input: { boardId: string; shareLinkId: string; displayName: string; color: string }): Promise<Guest>;
   getGuest(id: string): Promise<Guest | null>;
+  /** Visitantes ainda com acesso (não removidos, de links ativos). */
+  listGuests(boardId: string): Promise<Guest[]>;
+  revokeGuest(id: string): Promise<void>;
+
+  renameBoard(id: string, title: string): Promise<Board>;
+  /** Copia o quadro e o conteúdo (doc Yjs); o dono da cópia é quem duplicou. */
+  duplicateBoard(id: string, ownerId: string): Promise<Board>;
+  trashBoard(id: string): Promise<void>;
 }

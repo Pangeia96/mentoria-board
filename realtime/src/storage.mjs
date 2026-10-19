@@ -31,6 +31,8 @@ function supabaseStorage(sb) {
     /** Papel atual no banco (o token pode estar velho: link desativado, visitante removido). */
     async currentRole({ kind, sub, board }) {
       if (!UUID.test(sub) || !UUID.test(board)) return null;
+      const { data: b } = await sb.from("boards").select("id").eq("id", board).is("deleted_at", null).maybeSingle();
+      if (!b) return null; // quadro na lixeira: ninguém entra
       if (kind === "user") {
         const { data } = await sb.from("board_members").select("role").eq("board_id", board).eq("user_id", sub).maybeSingle();
         return data?.role ?? null;
@@ -65,8 +67,20 @@ function fileStorage() {
       await writeFile(`${f}.tmp`, update);
       await rename(`${f}.tmp`, f);
     },
-    async currentRole(payload) {
-      return payload.role; // modo dev: confia no token assinado
+    /** Modo dev: mesma regra do Postgres, lendo o JSON da camada fake do web (.data/dev-db.json). */
+    async currentRole({ kind, sub, board }) {
+      let db;
+      try {
+        db = JSON.parse(await readFile(join(dir, "..", "dev-db.json"), "utf8"));
+      } catch {
+        return null;
+      }
+      if (!db.boards?.some((b) => b.id === board && !b.deletedAt)) return null;
+      if (kind === "user") return db.members?.find((m) => m.boardId === board && m.userId === sub)?.role ?? null;
+      const g = db.guests?.find((x) => x.id === sub);
+      const link = g && db.links?.find((l) => l.id === g.shareLinkId);
+      if (!g || g.boardId !== board || g.revokedAt || !link?.enabled) return null;
+      return link.role;
     },
   };
 }

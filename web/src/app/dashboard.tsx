@@ -1,11 +1,13 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { LayoutGrid, LogOut, Plus, Search } from "lucide-react";
-import { Button, Field, IconButton, Input, Modal, TooltipProvider } from "@/components/ui/primitives";
+import { useRouter } from "next/navigation";
+import { Copy, LayoutGrid, LogOut, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Button, Field, IconButton, Input, Modal, Toaster, TooltipProvider, type ToastData } from "@/components/ui/primitives";
 import { BoardCard, EmptyState } from "@/components/ui/board";
 import type { Board } from "@/lib/data/types";
 import { createBoard, logout } from "./actions";
+import { RenameModal, TrashModal, afterMenu, useBoardOps } from "./b/[id]/board-menu";
 
 const rtf = new Intl.RelativeTimeFormat("pt-BR", { numeric: "auto" });
 function ago(iso: string) {
@@ -21,6 +23,8 @@ function ago(iso: string) {
 
 export function Dashboard({ user, boards, q }: { user: { name: string; email: string }; boards: Board[]; q: string }) {
   const [open, setOpen] = useState(false);
+  const [toasts, setToasts] = useState<ToastData[]>([]);
+  const onError = (title: string) => setToasts((x) => [...x, { id: Date.now(), kind: "error", title }]);
   return (
     <TooltipProvider>
       <header className="flex h-(--mb-header-h) items-center justify-between border-b border-border bg-surface px-4 md:px-8">
@@ -59,13 +63,14 @@ export function Dashboard({ user, boards, q }: { user: { name: string; email: st
         ) : (
           <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {boards.map((b) => (
-              <li key={b.id}><BoardCard title={b.title} client={b.clientName ?? undefined} updated={ago(b.updatedAt)} href={`/b/${b.id}`} /></li>
+              <li key={b.id}><DashboardCard board={b} onError={onError} /></li>
             ))}
           </ul>
         )}
       </main>
 
       <NewBoardModal open={open} onOpenChange={setOpen} />
+      <Toaster toasts={toasts} onDismiss={(id) => setToasts((x) => x.filter((t) => t.id !== id))} />
     </TooltipProvider>
   );
 }
@@ -87,5 +92,30 @@ function NewBoardModal({ open, onOpenChange }: { open: boolean; onOpenChange: (v
         </div>
       </form>
     </Modal>
+  );
+}
+
+function DashboardCard({ board, onError }: { board: Board; onError: (m: string) => void }) {
+  const router = useRouter();
+  const ops = useBoardOps(board.id, onError);
+  const [renaming, setRenaming] = useState(false);
+  const [trashing, setTrashing] = useState(false);
+  return (
+    <>
+      <BoardCard
+        title={board.title}
+        client={board.clientName ?? undefined}
+        updated={ago(board.updatedAt)}
+        href={`/b/${board.id}`}
+        menuItems={[
+          { label: "Renomear", icon: <Pencil />, onSelect: () => afterMenu(() => setRenaming(true)) },
+          { label: "Duplicar", icon: <Copy />, onSelect: ops.duplicate },
+          "separator",
+          { label: "Mover para a lixeira", icon: <Trash2 />, danger: true, onSelect: () => afterMenu(() => setTrashing(true)) },
+        ]}
+      />
+      <RenameModal open={renaming} onOpenChange={setRenaming} initial={board.title} pending={ops.pending} onSave={(t) => ops.rename(t, () => { setRenaming(false); router.refresh(); })} />
+      <TrashModal open={trashing} onOpenChange={setTrashing} title={board.title} pending={ops.pending} onConfirm={() => ops.trash(() => { setTrashing(false); router.refresh(); })} />
+    </>
   );
 }

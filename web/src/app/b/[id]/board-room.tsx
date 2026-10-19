@@ -4,12 +4,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Arrow, Circle, Group, Layer, Line, Rect, Stage, Text, Transformer } from "react-konva";
 import type Konva from "konva";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Eye } from "lucide-react";
-import { IconButton, Toaster, TooltipProvider, type ToastData } from "@/components/ui/primitives";
-import { type Person, type PresenceColor } from "@/components/ui/board";
+import { ArrowLeft, Eye, Magnet, Users } from "lucide-react";
+import { Button, Drawer, IconButton, Toaster, TooltipProvider, type ToastData } from "@/components/ui/primitives";
+import { Avatar, type Person, type PresenceColor } from "@/components/ui/board";
 import { ConnectionBanner, CreationToolbar, PeopleBar, RemoteCursor, ZoomControl, type Tool } from "@/components/ui/canvas-chrome";
 import type { Actor } from "@/lib/auth";
-import { useBoardDoc } from "./use-board-doc";
+import { useBoardDoc, type Viewport } from "./use-board-doc";
+import { BoardMenu } from "./board-menu";
 import { ShareModal } from "./share-modal";
 import { ItemNode, measureTextHeight, type NodeHandlers } from "./board/nodes";
 import { ContextBar, PenFlyout, ShapeFlyout } from "./board/context-bar";
@@ -44,14 +45,22 @@ const union = (boxes: Box[]): Box | null => {
 export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
   const canEdit = me.role === "owner" || me.role === "editor";
   const router = useRouter();
-  const { items, synced, conn, justSynced, authError, peers, actions, canUndo, canRedo } = useBoardDoc({ boardId: board.id, token, wsUrl, me });
+  const sizeRef = useRef({ w: 0, h: 0 });
+  const [following, setFollowing] = useState<number | null>(null); // clientId de quem estou seguindo
+  const [localView, setLocalView] = useState<View>({ x: 0, y: 0, scale: 1 });
+  const [toasts, setToasts] = useState<ToastData[]>([]);
+  const toast = useCallback((kind: ToastData["kind"], title: string) => setToasts((x) => [...x, { id: Date.now() + Math.random(), kind, title }]), []);
+  const viewFrom = (v: Viewport): View => ({ scale: v.scale, x: sizeRef.current.w / 2 - v.cx * v.scale, y: sizeRef.current.h / 2 - v.cy * v.scale });
+  const { items, synced, conn, justSynced, authError, peers, actions, canUndo, canRedo } = useBoardDoc({
+    boardId: board.id, token, wsUrl, me,
+    onSummon: (v, by) => { setFollowing(null); setLocalView(viewFrom(v)); toast("info", `${by} trouxe você para a visão dele`); },
+  });
   const byId = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
 
   const wrap = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const trRef = useRef<Konva.Transformer>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
-  const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
   const [tool, setToolRaw] = useState<Tool>("select");
   const [shapeKind, setShapeKind] = useState<ShapeKind>("rect");
   const [penMode, setPenMode] = useState<"draw" | "erase">("draw");
@@ -64,8 +73,8 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [busy, setBusy] = useState(false); // arrastando/transformando: esconde a barra
   const [shareOpen, setShareOpen] = useState(false);
-  const [toasts, setToasts] = useState<ToastData[]>([]);
-  const toast = useCallback((kind: ToastData["kind"], title: string) => setToasts((x) => [...x, { id: Date.now() + Math.random(), kind, title }]), []);
+  const [peopleOpen, setPeopleOpen] = useState(false);
+  const [title, setTitle] = useState(board.title);
   const clipboard = useRef<Item[]>([]);
   const pasteCount = useRef(0);
   const newTextId = useRef<string | null>(null);
@@ -75,6 +84,29 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
   const [endDrag, setEndDrag] = useState<{ which: "from" | "to"; to: Endpoint } | null>(null);
 
   const setTool = useCallback((t: Tool) => { setToolRaw(t); setDraft(null); }, []);
+
+  /* seguir alguém: a visão vem da visão publicada pela pessoa */
+  const leader = following !== null ? peers.find((p) => p.clientId === following) : undefined;
+  const lv = leader?.viewport;
+  const view: View = useMemo(
+    () => (lv && size.w ? { scale: lv.scale, x: size.w / 2 - lv.cx * lv.scale, y: size.h / 2 - lv.cy * lv.scale } : localView),
+    [lv, size.w, size.h, localView],
+  );
+  const viewRef = useRef(view);
+  useEffect(() => { viewRef.current = view; sizeRef.current = size; });
+  /** Mexer na visão (pan/zoom) para de seguir, partindo de onde a pessoa estava. */
+  const setView = useCallback((upd: View | ((v: View) => View)) => {
+    setFollowing(null);
+    setLocalView(() => (typeof upd === "function" ? upd(viewRef.current) : upd));
+  }, []);
+
+  /* publica a minha visão (para quem me segue / "trazer para mim") */
+  useEffect(() => {
+    if (!size.w) return;
+    const id = setTimeout(() => actions.setViewport({ cx: (size.w / 2 - view.x) / view.scale, cy: (size.h / 2 - view.y) / view.scale, scale: view.scale }), 120);
+    return () => clearTimeout(id);
+  }, [view.x, view.y, view.scale, size.w, size.h, actions]);
+  const myViewport = (): Viewport => ({ cx: (size.w / 2 - view.x) / view.scale, cy: (size.h / 2 - view.y) / view.scale, scale: view.scale });
 
   /* seleção/edição somem sozinhas se outra pessoa apagar o item */
   const selected = useMemo(() => selRaw.filter((id) => byId.has(id)), [selRaw, byId]);
@@ -105,7 +137,7 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
       const wy = (cy - v.y) / v.scale;
       return { scale, x: cx - wx * scale, y: cy - wy * scale };
     });
-  }, []);
+  }, [setView]);
 
   const fit = useCallback(() => {
     const b = union(items.map((i) => boxOf(i, byId)));
@@ -113,7 +145,7 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
     const pad = Math.min(120, size.w * 0.08);
     const scale = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.min((size.w - pad * 2) / Math.max(b.w, 1), (size.h - pad * 2) / Math.max(b.h, 1), 1.5)));
     setView({ scale, x: size.w / 2 - (b.x + b.w / 2) * scale, y: size.h / 2 - (b.y + b.h / 2) * scale });
-  }, [items, byId, size]);
+  }, [items, byId, size, setView]);
 
   /* redesenha quando a fonte terminar de carregar (o Konva mede o texto ao desenhar) */
   useEffect(() => {
@@ -511,7 +543,7 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
           backgroundPosition: `${view.x}px ${view.y}px`,
         }}
       >
-        <h1 className="sr-only">{board.title}</h1>
+        <h1 className="sr-only">{title}</h1>
         {size.w > 0 && (
           <Stage
             ref={stageRef}
@@ -696,7 +728,11 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
             {me.kind === "user" && (
               <IconButton label="Voltar aos quadros" size="sm" tooltipSide="bottom" onClick={() => router.push("/")}><ArrowLeft /></IconButton>
             )}
-            <span className={`max-w-60 truncate text-sm font-semibold ${me.kind === "user" ? "" : "pl-2"}`} title={board.title}>{board.title}</span>
+            {me.role === "owner" ? (
+              <BoardMenu boardId={board.id} title={title} onRenamed={setTitle} onError={(m) => toast("error", m)} />
+            ) : (
+              <span className={`max-w-60 truncate text-sm font-semibold ${me.kind === "user" ? "" : "pl-2"}`} title={title}>{title}</span>
+            )}
           </div>
 
           <div className="pointer-events-auto absolute left-3 top-1/2 flex -translate-y-1/2 items-start gap-2">
@@ -706,7 +742,13 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
           </div>
 
           <div className="pointer-events-auto absolute right-3 top-3">
-            <PeopleBar people={peopleForBar} onShare={me.role === "owner" ? () => setShareOpen(true) : undefined} />
+            <PeopleBar
+              people={peopleForBar}
+              onOpenPeople={() => setPeopleOpen(true)}
+              onShare={me.role === "owner" ? () => setShareOpen(true) : undefined}
+              following={leader ? { id: leader.user.id, name: leader.user.name, color: leader.user.color as PresenceColor } : undefined}
+              onStopFollowing={() => setView(view)}
+            />
           </div>
 
           <div className="absolute left-1/2 top-3 flex -translate-x-1/2 flex-col items-center gap-2">
@@ -739,6 +781,36 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
           )}
         </div>
       </div>
+
+      <Drawer open={peopleOpen} onOpenChange={setPeopleOpen} title={`No quadro agora (${1 + peers.filter((p, i, a) => a.findIndex((q) => q.user.id === p.user.id) === i && p.user.id !== me.id).length})`}>
+        <ul className="flex flex-col gap-1">
+          <li className="flex items-center gap-3 rounded-md px-2 py-1.5">
+            <Avatar person={{ id: me.id, name: me.name, color: me.color as PresenceColor, guest: me.kind === "guest" }} />
+            <span className="flex-1 truncate text-sm">{me.name} <span className="text-xs text-text-muted">(você)</span></span>
+          </li>
+          {peers.filter((p, i, a) => a.findIndex((q) => q.user.id === p.user.id) === i && p.user.id !== me.id).map((p) => (
+            <li key={p.clientId} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-surface-hover">
+              <Avatar person={{ id: p.user.id, name: p.user.name, color: p.user.color as PresenceColor, guest: p.user.kind === "guest" }} following={following === p.clientId} />
+              <span className="min-w-0 flex-1 truncate text-sm">{p.user.name}{p.user.kind === "guest" && <span className="text-xs text-text-muted"> · visitante</span>}</span>
+              {canEdit && (
+                <IconButton label={`Trazer ${p.user.name} para a minha visão`} size="sm" tooltipSide="left" onClick={() => { actions.summon(myViewport(), p.clientId); toast("success", `${p.user.name} veio para a sua visão`); }}>
+                  <Magnet />
+                </IconButton>
+              )}
+              <Button size="sm" variant={following === p.clientId ? "primary" : "ghost"} disabled={!p.viewport} onClick={() => { if (following === p.clientId) setView(view); else { setFollowing(p.clientId); setPeopleOpen(false); } }}>
+                {following === p.clientId ? "Parar" : "Seguir"}
+              </Button>
+            </li>
+          ))}
+        </ul>
+        {peers.length === 0 ? (
+          <p className="mt-4 text-sm text-text-muted">Só você por aqui. Mande o link para o mentorado entrar.</p>
+        ) : canEdit && (
+          <Button className="mt-4 w-full" variant="secondary" icon={<Users className="size-4" />} onClick={() => { actions.summon(myViewport(), null); toast("success", "Todo mundo veio para a sua visão"); }}>
+            Trazer todos para a minha visão
+          </Button>
+        )}
+      </Drawer>
 
       {me.role === "owner" && <ShareModal boardId={board.id} open={shareOpen} onOpenChange={setShareOpen} onCopied={() => toast("success", "Link copiado")} onError={(m) => toast("error", m)} />}
       <Toaster toasts={toasts} onDismiss={(id) => setToasts((x) => x.filter((y) => y.id !== id))} />

@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { Copy, Ellipsis, Link2, Pencil, Trash2 } from "lucide-react";
 import clsx from "clsx";
-import { IconButton, Menu } from "./primitives";
+import { IconButton, Menu, type MenuItem } from "./primitives";
 
 /* As 8 cores de presença: cursor, avatar e borda de seleção da mesma pessoa. */
 export const PRESENCE = ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"] as const;
@@ -63,7 +63,16 @@ export function AvatarStack({ people, max = 4, onClick }: { people: Person[]; ma
 }
 
 /* ----------------------------------------------------------------- BoardCard */
-export function BoardCard({ title, client, updated, href, thumbnail }: { title: string; client?: string; updated: string; href: string; thumbnail?: ReactNode }) {
+const DEMO_ITEMS: MenuItem[] = [
+  { label: "Renomear", icon: <Pencil /> },
+  { label: "Duplicar", icon: <Copy /> },
+  "separator",
+  { label: "Mover para a lixeira", icon: <Trash2 />, danger: true },
+];
+
+export function BoardCard({ title, client, updated, href, thumbnail, menuItems = DEMO_ITEMS }: {
+  title: string; client?: string; updated: string; href: string; thumbnail?: ReactNode; menuItems?: MenuItem[];
+}) {
   return (
     <div className="group relative flex flex-col overflow-hidden rounded-lg border border-border bg-surface transition-shadow duration-(--mb-motion-fast) hover:shadow-md focus-within:shadow-md">
       <a href={href} className="flex flex-col outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:outline-2 focus-visible:after:outline-focus">
@@ -76,12 +85,7 @@ export function BoardCard({ title, client, updated, href, thumbnail }: { title: 
       <div className="absolute bottom-2 right-2 z-10">
         <Menu
           trigger={<IconButton label="Opções do quadro" size="sm" tooltipSide="top"><Ellipsis /></IconButton>}
-          items={[
-            { label: "Renomear", icon: <Pencil /> },
-            { label: "Duplicar", icon: <Copy /> },
-            "separator",
-            { label: "Mover para a lixeira", icon: <Trash2 />, danger: true },
-          ]}
+          items={menuItems}
         />
       </div>
     </div>

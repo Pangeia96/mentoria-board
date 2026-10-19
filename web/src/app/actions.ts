@@ -81,25 +81,24 @@ export async function createBoard(_: FormState, form: FormData): Promise<FormSta
   redirect(`/b/${id}`);
 }
 
-/* ------------------------------------------------------------ S05 link de compartilhamento */
-export async function getShareUrl(boardId: string): Promise<{ url?: string; error?: string }> {
-  if (!z.string().uuid().safeParse(boardId).success) return { error: "Quadro inválido." };
-  const user = await currentUser();
-  if (!user) return { error: "Faça login de novo." };
-  if ((await data.getMemberRole(boardId, user.id)) !== "owner") return { error: "Só o dono do quadro pode compartilhar." };
-  try {
-    const link = await data.getOrCreateShareLink(boardId, user.id);
-    return { url: `${await origin()}/j/${link.token}` };
-  } catch (e) {
-    return { error: (e as Error).message };
-  }
-}
-
 /* ------------------------------------------------------------ S06 visitante entra */
 const RANDOM_NAMES = ["Visitante Curioso", "Visitante Criativo", "Visitante Atento", "Visitante Sonhador", "Visitante Ousado"];
 const GuestName = z.string().trim().max(60, "Use no máximo 60 caracteres.");
 
+/** Limite simples por IP para entradas pelo link (por instância; suficiente para o tamanho da mentoria). */
+const joins = new Map<string, number[]>();
+async function tooManyJoins() {
+  const h = await headers();
+  const ip = (h.get("x-forwarded-for") ?? "").split(",")[0].trim() || "local";
+  const now = Date.now();
+  const recent = (joins.get(ip) ?? []).filter((t) => now - t < 60_000);
+  recent.push(now);
+  joins.set(ip, recent);
+  return recent.length > 20;
+}
+
 export async function joinAsGuest(token: string, _: FormState, form: FormData): Promise<FormState> {
+  if (await tooManyJoins()) return { error: "Muitas tentativas. Espere um minuto e tente de novo." };
   const link = await data.getShareLinkByToken(String(token));
   if (!link || !link.enabled) redirect(`/j/${encodeURIComponent(token)}`); // a página mostra o S07
   const parsed = GuestName.safeParse(form.get("name") ?? "");
