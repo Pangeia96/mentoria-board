@@ -51,3 +51,10 @@ Biblioteca de templates do Miro,skip,skip,yes,no,conteúdo deles; criar template
 Pacotes de formas e ícones licenciados,skip,skip,yes,no,usar conjunto aberto
 Escala de 200+ pessoas simultâneas,skip,skip,yes,no,meta: 2 a 15 por quadro
 Integrações / IA / Talktrack / apresentação,skip,skip,yes,no,fora do recorte
+Cobrança só por mentor (aluno nunca paga nem precisa de conta),diferencial,must,no,partial,fixes.md #1 · entrada sem conta já existe; falta o plano/preço (replica-launch)
+Cobrança sem surpresa (preço fixo; aviso antes de cobrar; cancelar com 1 clique),diferencial,must,no,no,fixes.md #2 · Stripe Customer Portal + e-mail antes da cobrança
+Tablet e celular no navegador (pinça só no quadro; caneta com rejeição de palma; teclado não cobre o texto),diferencial,should,no,partial,fixes.md #3 · pinça feita no M2; caneta e teclado não
+Nunca perder trabalho (offline curto; aviso salvo/não salvo; histórico de versões),diferencial,should,no,partial,fixes.md #4 · banner de conexão existe; falta y-indexeddb e versões
+Rápido com quadro grande e 15 pessoas (teste de carga; 60 fps),diferencial,should,no,no,fixes.md #5
+Modo sessão de mentoria (barra enxuta; modelos de mentoria),diferencial,should,no,no,fixes.md #6
+Esconder nome dos frames,objetos,could,no,no,fixes.md #7 · pedido fino (1 avaliação)

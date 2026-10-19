@@ -1,0 +1,18 @@
+{
+  "lento / trava / pesado": ["slow", "lag", "laggy", "crash", "crashes", "freez", "performance", "sluggish", "heavy", "loading", "load time", "lento", "trava", "travando", "pesado", "demora", "battery", "memory", "cpu"],
+  "preço / plano grátis limitado": ["price", "pricing", "expensive", "subscription", "paywall", "pay", "paid", "free plan", "3 boards", "three boards", "limit", "upgrade", "cost", "caro", "pagar", "assinatura", "plano gratuito", "money"],
+  "conta / login para convidados": ["sign up", "signup", "sign in", "log in", "login", "account", "guest", "visitor", "without an account", "invite", "logged out", "conta", "cadastro", "convidado", "entrar"],
+  "complicado / poluído / curva de aprendizado": ["complicated", "confusing", "clutter", "cluttered", "learning curve", "too many", "overwhelming", "bloat", "bloated", "intuitive", "not intuitive", "hard to use", "difficult", "complexo", "confuso", "difícil"],
+  "celular / iPad / toque / caneta": ["ipad", "iphone", "mobile", "phone", "tablet", "touch", "apple pencil", "pencil", "stylus", "celular", "caneta"],
+  "perda de dados / sincronização": ["lost", "lose", "deleted", "disappeared", "sync", "syncing", "offline", "data loss", "perdi", "sumiu", "apagou"],
+  "texto e formatação": ["text", "font", "format", "typing", "keyboard", "bullet", "texto", "fonte", "teclado"],
+  "exportar / PDF / imprimir": ["export", "pdf", "print", "download", "png", "exportar", "imprimir"],
+  "mudanças de interface / atualizações": ["new ui", "new interface", "redesign", "update ruined", "latest update", "since the update", "changed", "atualização", "nova interface"],
+  "IA empurrada": ["ai", "artificial intelligence", "copilot", "chatgpt", "gpt"],
+  "navegação / zoom": ["zoom", "scroll", "navigate", "navigation", "lost on the board", "infinite canvas", "rolagem"],
+  "facilitação (timer, votação, apresentar)": ["timer", "vote", "voting", "facilitat", "workshop", "presentation", "present", "follow", "attention", "votação", "apresentação"],
+  "desenho à mão / caneta": ["draw", "drawing", "handwriting", "pen", "ink", "sketch", "desenhar", "desenho"],
+  "suporte / atendimento": ["support", "customer service", "help desk", "no response", "suporte", "atendimento"],
+  "ensino / alunos / sala de aula": ["teacher", "teaching", "student", "students", "class", "classroom", "school", "lesson", "tutor", "professor", "aluno", "alunos", "aula", "escola"],
+  "coaching / mentoria / terapia / consultoria": ["coach", "coaching", "mentor", "mentoring", "therap", "client", "clients", "consult", "session", "mentoria", "cliente", "sessão"]
+}
