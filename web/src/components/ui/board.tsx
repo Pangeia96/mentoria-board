@@ -13,7 +13,7 @@ export const presenceVar = (c: PresenceColor) => `var(--mb-presence-${c})`;
 export type Person = { id: string; name: string; color: PresenceColor; guest?: boolean };
 
 const initials = (name: string) =>
-  name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
+  name.replace(/[^\p{L}\p{N}\s]/gu, "").trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("") || "?";
 
 /* ----------------------------------------------------------------- Avatar */
 export function Avatar({ person, size = 32, ring, following }: { person: Person; size?: 24 | 32; ring?: boolean; following?: boolean }) {

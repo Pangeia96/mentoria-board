@@ -56,4 +56,12 @@ ${theme.join('\n')}
 `
 mkdirSync(dirname(out), { recursive: true })
 writeFileSync(out, css)
+
+// Konva desenha em <canvas> e não lê CSS: os mesmos valores em TS.
+const ts = `// GERADO por replica/design/build-tokens.mjs — não edite à mão; edite tokens.json.
+export const color = ${JSON.stringify(t.color, null, 2)} as const;
+export const sticky = ${JSON.stringify(t.sticky, null, 2)} as const;
+export const presence = ${JSON.stringify(t.presence, null, 2)} as const;
+`
+writeFileSync(join(dirname(out), 'tokens.ts'), ts)
 console.log(`tokens.css: ${root.length} variáveis, ${theme.length} mapeadas no Tailwind -> ${out}`)

@@ -12,7 +12,7 @@ import { Button, IconButton, Menu, Spinner, Textarea } from "./primitives";
 import { Avatar, AvatarStack, presenceVar, type Person } from "./board";
 
 /* ----------------------------------------------------------------- Barra genérica flutuante */
-function Bar({ children, vertical, className, label }: { children: ReactNode; vertical?: boolean; className?: string; label: string }) {
+export function Bar({ children, vertical, className, label }: { children: ReactNode; vertical?: boolean; className?: string; label: string }) {
   return (
     <div
       role="toolbar"
@@ -24,7 +24,7 @@ function Bar({ children, vertical, className, label }: { children: ReactNode; ve
     </div>
   );
 }
-const Sep = ({ vertical }: { vertical?: boolean }) => (
+export const Sep = ({ vertical }: { vertical?: boolean }) => (
   <span aria-hidden className={clsx("bg-border", vertical ? "mx-1.5 h-px" : "mx-0.5 h-6 w-px")} />
 );
 
@@ -44,10 +44,13 @@ const TOOLS: { id: Tool; label: string; key: string; icon: ReactNode; edit: bool
   { id: "comment", label: "Comentário", key: "C", icon: <MessageSquare />, edit: false },
 ];
 
-export function CreationToolbar({ tool, onTool, canEdit = true }: { tool: Tool; onTool: (t: Tool) => void; canEdit?: boolean }) {
+export function CreationToolbar({ tool, onTool, canEdit = true, tools, onUndo, onRedo, canUndo = true, canRedo = true }: {
+  tool: Tool; onTool: (t: Tool) => void; canEdit?: boolean; tools?: Tool[];
+  onUndo?: () => void; onRedo?: () => void; canUndo?: boolean; canRedo?: boolean;
+}) {
   return (
     <Bar vertical label="Ferramentas">
-      {TOOLS.filter((t) => canEdit || !t.edit).map((t) => (
+      {TOOLS.filter((t) => (canEdit || !t.edit) && (!tools || tools.includes(t.id))).map((t) => (
         <IconButton key={t.id} label={t.label} shortcut={t.key} pressed={tool === t.id} onClick={() => onTool(t.id)}>
           {t.icon}
         </IconButton>
@@ -55,8 +58,8 @@ export function CreationToolbar({ tool, onTool, canEdit = true }: { tool: Tool; 
       {canEdit && (
         <>
           <Sep vertical />
-          <IconButton label="Desfazer" shortcut="Ctrl+Z"><Undo2 /></IconButton>
-          <IconButton label="Refazer" shortcut="Ctrl+Shift+Z"><Redo2 /></IconButton>
+          <IconButton label="Desfazer" shortcut="Ctrl+Z" onClick={onUndo} disabled={!canUndo}><Undo2 /></IconButton>
+          <IconButton label="Refazer" shortcut="Ctrl+Shift+Z" onClick={onRedo} disabled={!canRedo}><Redo2 /></IconButton>
         </>
       )}
     </Bar>
@@ -156,7 +159,7 @@ export function PeopleBar({ people, onOpenPeople, onShare, following, onStopFoll
     <div className="flex flex-col items-end gap-2">
       <Bar label="Pessoas e compartilhamento" className="gap-2 pl-2">
         <AvatarStack people={people} onClick={onOpenPeople} />
-        <Button size="sm" onClick={onShare}>Compartilhar</Button>
+        {onShare && <Button size="sm" onClick={onShare}>Compartilhar</Button>}
       </Bar>
       {following && (
         <div className="flex items-center gap-2 rounded-full py-1 pl-3 pr-1 text-xs font-semibold text-presence-on-presence shadow-md" style={{ background: presenceVar(following.color) }}>
@@ -169,12 +172,16 @@ export function PeopleBar({ people, onOpenPeople, onShare, following, onStopFoll
 }
 
 /* ----------------------------------------------------------------- ZoomControl */
-export function ZoomControl({ zoom, onZoom, minimap, onMinimap }: { zoom: number; onZoom: (z: number) => void; minimap?: boolean; onMinimap?: () => void }) {
+export function ZoomControl({ zoom, onZoom, minimap, onMinimap, onFit }: { zoom: number; onZoom: (z: number) => void; minimap?: boolean; onMinimap?: () => void; onFit?: () => void }) {
   const clamp = (z: number) => Math.min(4, Math.max(0.1, Math.round(z * 10) / 10));
   return (
     <Bar label="Zoom">
-      <IconButton label="Mapa do quadro" shortcut="M" size="sm" tooltipSide="top" pressed={minimap} onClick={onMinimap}><MapIcon /></IconButton>
-      <Sep />
+      {onMinimap && (
+        <>
+          <IconButton label="Mapa do quadro" shortcut="M" size="sm" tooltipSide="top" pressed={minimap} onClick={onMinimap}><MapIcon /></IconButton>
+          <Sep />
+        </>
+      )}
       <IconButton label="Diminuir zoom" shortcut="Ctrl+−" size="sm" tooltipSide="top" onClick={() => onZoom(clamp(zoom - 0.1))}><Minus /></IconButton>
       <Menu
         trigger={
@@ -183,10 +190,9 @@ export function ZoomControl({ zoom, onZoom, minimap, onMinimap }: { zoom: number
           </button>
         }
         items={[
-          { label: "Ajustar à tela", shortcut: "Alt+1", onSelect: () => onZoom(0.6) },
+          { label: "Ajustar à tela", shortcut: "Alt+1", onSelect: () => (onFit ? onFit() : onZoom(0.6)) },
           { label: "Zoom 100%", shortcut: "Ctrl+0", onSelect: () => onZoom(1) },
-          { label: "Zoom na seleção", shortcut: "Alt+2", onSelect: () => onZoom(1.5) },
-        ]}
+                  ]}
       />
       <IconButton label="Aumentar zoom" shortcut="Ctrl+=" size="sm" tooltipSide="top" onClick={() => onZoom(clamp(zoom + 0.1))}><Plus /></IconButton>
     </Bar>
