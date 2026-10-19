@@ -133,6 +133,10 @@ export function ContextBar({ items, onPatch, onDuplicate, onDelete, onReorder, o
         </>
       )}
 
+      {!locked && type === "frame" && first.type === "frame" && (
+        <SwatchButton label="Fundo do frame" value={first.fill} swatches={FILL_COLORS.filter((c) => c.id !== "none")} onChange={(c) => onPatch({ fill: c })} />
+      )}
+
       {!locked && type === "stroke" && first.type === "stroke" && (
         <>
           <SwatchButton label="Cor do traço" value={first.color} swatches={INK_COLORS} onChange={(c) => onPatch({ color: c })} />
@@ -140,8 +144,8 @@ export function ContextBar({ items, onPatch, onDuplicate, onDelete, onReorder, o
         </>
       )}
 
-      {!locked && one && onEditText && (one.type === "shape" || one.type === "text" || one.type === "sticky" || one.type === "connector") && (
-        <Toggle label={one.type === "connector" ? "Rótulo da seta" : "Editar texto"} shortcut="Enter" onClick={onEditText}><Type /></Toggle>
+      {!locked && one && onEditText && (one.type === "shape" || one.type === "text" || one.type === "sticky" || one.type === "connector" || one.type === "frame") && (
+        <Toggle label={one.type === "connector" ? "Rótulo da seta" : one.type === "frame" ? "Renomear frame" : "Editar texto"} shortcut="Enter" onClick={onEditText}><Type /></Toggle>
       )}
 
       {type && !locked && <Sep />}

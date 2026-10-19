@@ -24,11 +24,19 @@ export type ConnectorItem = Base & {
   type: "connector"; from: Endpoint; to: Endpoint; path: ConnectorPath; startCap: Cap; endCap: Cap; color: string; width: number; label: string;
 };
 
-export type Item = StickyItem | ShapeItem | TextItem | StrokeItem | ConnectorItem;
+/** Área nomeada que agrupa conteúdo (arrastar o frame leva o que está dentro). */
+export type FrameItem = Base & { type: "frame"; title: string; fill: string };
+/** Imagem enviada pelo usuário (arquivo servido por /api/assets/<board>/<id>). */
+export type ImageItem = Base & { type: "image"; src: string; assetId: string };
+
+export type Item = StickyItem | ShapeItem | TextItem | StrokeItem | ConnectorItem | FrameItem | ImageItem;
 export type ItemType = Item["type"];
 export type BoxItem = Exclude<Item, ConnectorItem>;
 /** Patch aceito por update(): qualquer campo de qualquer tipo, menos id e type. */
-export type ItemPatch = Partial<Omit<StickyItem, "id" | "type"> & Omit<ShapeItem, "id" | "type"> & Omit<TextItem, "id" | "type"> & Omit<StrokeItem, "id" | "type"> & Omit<ConnectorItem, "id" | "type">>;
+export type ItemPatch = Partial<
+  Omit<StickyItem, "id" | "type"> & Omit<ShapeItem, "id" | "type"> & Omit<TextItem, "id" | "type"> & Omit<StrokeItem, "id" | "type"> &
+  Omit<ConnectorItem, "id" | "type"> & Omit<FrameItem, "id" | "type"> & Omit<ImageItem, "id" | "type">
+>;
 
 export const isBox = (i: Item): i is BoxItem => i.type !== "connector";
 export const hasText = (i: Item): i is StickyItem | ShapeItem | TextItem => i.type === "sticky" || i.type === "shape" || i.type === "text";
@@ -82,6 +90,12 @@ export const newStroke = (points: number[], color: string, width: number): New<S
     points: points.map((v, i) => Math.round((v - (i % 2 === 0 ? minX : minY)) * 10) / 10), color, width,
   };
 };
+export const newFrame = (x: number, y: number, w: number, h: number, n: number): New<FrameItem> => ({
+  ...base, type: "frame", x, y, w, h, title: `Frame ${n}`, fill: "white",
+});
+export const newImage = (x: number, y: number, w: number, h: number, src: string, assetId: string): New<ImageItem> => ({
+  ...base, type: "image", x, y, w, h, src, assetId,
+});
 export const newConnector = (from: Endpoint, to: Endpoint): New<ConnectorItem> => ({
   ...base, type: "connector", x: 0, y: 0, w: 0, h: 0, from, to, path: "straight", startCap: "none", endCap: "arrow", color: "ink", width: 2, label: "",
 });

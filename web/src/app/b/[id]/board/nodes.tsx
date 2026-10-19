@@ -1,11 +1,13 @@
 "use client";
 
 // Desenho de cada tipo de item no Konva. Sem estado: tudo vem do doc Yjs via props.
+import * as tk from "@/styles/tokens";
+import { useEffect, useState } from "react";
 import Konva from "konva";
-import { Arrow, Ellipse, Group, Line, Rect, Text } from "react-konva";
+import { Arrow, Ellipse, Group, Image as KImage, Line, Rect, Text } from "react-konva";
 import {
   FONT, INK, STICKY_HEX, SURFACE, connectorEnds, connectorPoints, fillHex, inkHex, stickyFontSize,
-  type ConnectorItem, type Item, type ShapeItem, type StickyItem, type StrokeItem, type TextItem,
+  type ConnectorItem, type FrameItem, type ImageItem, type Item, type ShapeItem, type StickyItem, type StrokeItem, type TextItem,
 } from "./model";
 
 export type NodeHandlers = {
@@ -49,6 +51,8 @@ export function ItemNode({ item, byId, h }: { item: Item; byId: Map<string, Item
       {item.type === "shape" && <ShapeBody item={item} hideText={h.hideText} />}
       {item.type === "text" && <TextBody item={item} hideText={h.hideText} />}
       {item.type === "stroke" && <StrokeBody item={item} />}
+      {item.type === "frame" && <FrameBody item={item} hideText={h.hideText} />}
+      {item.type === "image" && <ImageBody item={item} />}
     </Group>
   );
 }
@@ -122,6 +126,40 @@ function StrokeBody({ item }: { item: StrokeItem }) {
       tension={0.4}
       hitStrokeWidth={Math.max(14, item.width + 8)}
     />
+  );
+}
+
+function FrameBody({ item, hideText }: { item: FrameItem; hideText: boolean }) {
+  return (
+    <>
+      {/* o corpo não captura clique: clicar dentro do frame seleciona o que está nele (ou faz laço); o frame pega pelo título */}
+      <Rect width={item.w} height={item.h} fill={fillHex(item.fill)} stroke={tk.color["border-input"]} strokeWidth={1} strokeScaleEnabled={false} cornerRadius={4} listening={false} shadowColor="black" shadowOpacity={0.05} shadowBlur={6} />
+      <Rect y={-30} width={Math.min(item.w, Math.max(80, item.title.length * 8 + 24))} height={26} fill="transparent" />
+      {!hideText && (
+        <Text text={item.title || "Sem título"} y={-24} width={item.w} fontFamily={FONT} fontSize={15} fontStyle="600" fill={tk.color["text-muted"]} wrap="none" ellipsis listening={false} />
+      )}
+    </>
+  );
+}
+
+/** Carrega a imagem uma vez por src (o navegador guarda em cache). */
+function useHtmlImage(src: string) {
+  const [img, setImg] = useState<HTMLImageElement | null>(null);
+  useEffect(() => {
+    const el = new window.Image();
+    el.onload = () => setImg(el);
+    el.src = src;
+    return () => { el.onload = null; };
+  }, [src]);
+  return img;
+}
+
+function ImageBody({ item }: { item: ImageItem }) {
+  const img = useHtmlImage(item.src);
+  return img ? (
+    <KImage image={img} width={item.w} height={item.h} />
+  ) : (
+    <Rect width={item.w} height={item.h} fill={tk.color["surface-muted"]} stroke={tk.color.border} strokeWidth={1} strokeScaleEnabled={false} />
   );
 }
 

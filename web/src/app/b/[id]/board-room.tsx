@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Arrow, Circle, Group, Layer, Line, Rect, Stage, Text, Transformer } from "react-konva";
 import type Konva from "konva";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Eye, Magnet, MessageSquare, Users } from "lucide-react";
+import { ArrowLeft, Download, Eye, Magnet, MessageSquare, Users } from "lucide-react";
 import { Button, Drawer, IconButton, Toaster, TooltipProvider, type ToastData } from "@/components/ui/primitives";
 import { Avatar, type Person, type PresenceColor } from "@/components/ui/board";
 import { ConnectionBanner, CreationToolbar, PeopleBar, RemoteCursor, ZoomControl, type Tool } from "@/components/ui/canvas-chrome";
@@ -12,7 +12,7 @@ import type { Actor } from "@/lib/auth";
 import { useBoardDoc, type Viewport } from "./use-board-doc";
 import { BoardMenu } from "./board-menu";
 import { CommentPin, CommentsDrawer, NewCommentBox } from "./board/comments";
-import { createThreadAction, listThreadsAction, replyAction, resolveAction } from "../../comment-actions";
+import { createThreadAction, listThreadsAction, replyAction, resolveAction, uploadImageAction } from "../../comment-actions";
 import type { CommentThread } from "@/lib/data/types";
 import { ShareModal } from "./share-modal";
 import { ItemNode, measureTextHeight, type NodeHandlers } from "./board/nodes";
@@ -20,7 +20,7 @@ import { ContextBar, PenFlyout, ShapeFlyout } from "./board/context-bar";
 import { LASER_FADE_MS, LASER_MAX_POINTS, LaserLayer, type LaserPoint, type RemoteLaser } from "./board/laser";
 import {
   FONT, INK, PRESENCE_HEX, SELECTION, SURFACE, aabb, connectorBox, connectorEnds, contains, inkHex, intersects, isBox, hitsStroke,
-  anchorsOf, connectorPoints, nearestAnchor, newConnector, newShape, newSticky, newStroke, newText, normBox, stickyFontSize, thinPoints,
+  anchorsOf, connectorPoints, nearestAnchor, newConnector, newFrame, newImage, newShape, newSticky, newStroke, newText, normBox, stickyFontSize, thinPoints,
   type BoxItem, type Box, type ConnectorItem, type Endpoint, type Item, type ItemPatch, type Pt, type ShapeKind,
 } from "./board/model";
 
@@ -30,14 +30,15 @@ type View = { x: number; y: number; scale: number };
 type Draft =
   | { kind: "lasso"; start: Pt; cur: Pt; additive: boolean }
   | { kind: "shape"; start: Pt; cur: Pt }
+  | { kind: "frame"; start: Pt; cur: Pt }
   | { kind: "connector"; from: Endpoint; cur: Pt; to: Endpoint }
   | { kind: "pen"; points: number[] }
   | { kind: "erase" };
 
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 4;
-const TOOLS: Tool[] = ["select", "hand", "sticky", "shape", "text", "connector", "pen", "laser", "comment"];
-const CREATE_TOOLS = new Set<Tool>(["sticky", "shape", "text", "connector", "pen", "laser", "comment"]);
+const TOOLS: Tool[] = ["select", "hand", "sticky", "shape", "text", "connector", "pen", "frame", "image", "laser", "comment"];
+const CREATE_TOOLS = new Set<Tool>(["sticky", "shape", "text", "connector", "pen", "frame", "laser", "comment"]);
 
 const boxOf = (it: Item, byId: Map<string, Item>): Box => (isBox(it) ? aabb(it) : connectorBox(it, byId));
 const union = (boxes: Box[]): Box | null => {
@@ -103,7 +104,12 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
   const [hoverId, setHoverId] = useState<string | null>(null); // objeto mostrando os pontos de conexão
   const [endDrag, setEndDrag] = useState<{ which: "from" | "to"; to: Endpoint } | null>(null);
 
-  const setTool = useCallback((t: Tool) => { setToolRaw(t); setDraft(null); }, []);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const setTool = useCallback((t: Tool) => {
+    if (t === "image") { fileInput.current?.click(); return; } // não é um modo: abre o seletor e volta
+    setToolRaw(t);
+    setDraft(null);
+  }, []);
 
   /* seguir alguém: a visão vem da visão publicada pela pessoa */
   const leader = following !== null ? peers.find((p) => p.clientId === following) : undefined;
@@ -261,7 +267,7 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
 
   const startEditing = useCallback((id: string) => {
     const it = byId.get(id);
-    if (!canEdit || !it || it.locked || it.type === "stroke") return;
+    if (!canEdit || !it || it.locked || it.type === "stroke" || it.type === "image") return;
     setSel([id]);
     setEditing(id);
   }, [byId, canEdit]);
@@ -313,6 +319,7 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
       else if (k === "r") { setShapeKind("rect"); setTool("shape"); }
       else if (k === "o") { setShapeKind("ellipse"); setTool("shape"); }
       else if (k === "t") setTool("text");
+      else if (k === "f") setTool("frame");
       else if (k === "l") setTool("connector");
       else if (k === "p") { setPenMode("draw"); setTool("pen"); }
       else if (k === "e") { setPenMode("erase"); setTool("pen"); }
@@ -426,6 +433,8 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
       setSel([id]); setEditing(id); setTool("select");
     } else if (tool === "shape") {
       setDraft({ kind: "shape", start: p, cur: p });
+    } else if (tool === "frame") {
+      setDraft({ kind: "frame", start: p, cur: p });
     } else if (tool === "connector") {
       startConnector(resolveEnd(p), p);
     } else if (tool === "pen") {
@@ -471,6 +480,13 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
       const box = big ? b : { x: d.start.x - 80, y: d.start.y - 60, w: 160, h: 120 };
       const id = actions.add(newShape(Math.round(box.x), Math.round(box.y), Math.max(20, Math.round(box.w)), Math.max(20, Math.round(box.h)), shapeKind));
       setSel([id]); setTool("select");
+    } else if (d.kind === "frame") {
+      const b = normBox(d.start, d.cur);
+      const box = b.w > 40 && b.h > 40 ? b : { x: d.start.x - 320, y: d.start.y - 200, w: 640, h: 400 };
+      const n = items.filter((i) => i.type === "frame").length + 1;
+      const id = actions.add(newFrame(Math.round(box.x), Math.round(box.y), Math.round(box.w), Math.round(box.h), n));
+      actions.reorder([id], -1); // frames ficam atrás do conteúdo
+      setSel([id]); setTool("select");
     } else if (d.kind === "connector") {
       setHoverId(null);
       const to = resolveEnd(d.cur, d.from.itemId);
@@ -501,7 +517,17 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
       setBusy(true);
       const group = selected.includes(it.id) ? selected : [it.id];
       if (!selected.includes(it.id)) setSel([it.id]);
-      dragStart.current = new Map(group.map((id) => byId.get(id)).filter((x): x is Item => !!x && isBox(x) && !x.locked).map((x) => [x.id, { x: x.x, y: x.y }]));
+      const moving = group.map((id) => byId.get(id)).filter((x): x is BoxItem => !!x && isBox(x) && !x.locked);
+      // frame arrastado leva junto o que está inteiro dentro dele
+      moving.filter((x) => x.type === "frame").forEach((fr) => {
+        const fb = aabb(fr);
+        items.forEach((o) => {
+          if (o.id === fr.id || !isBox(o) || o.locked || moving.includes(o)) return;
+          const ob = aabb(o);
+          if (ob.x >= fb.x && ob.y >= fb.y && ob.x + ob.w <= fb.x + fb.w && ob.y + ob.h <= fb.y + fb.h) moving.push(o);
+        });
+      });
+      dragStart.current = new Map(moving.map((x) => [x.id, { x: x.x, y: x.y }]));
     },
     onDragMove: (e) => {
       const starts = dragStart.current;
@@ -606,6 +632,91 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
     setCommentsOpen(false);
   };
 
+  /* imagens: do seletor, colando (Ctrl+V) ou soltando arquivos no quadro */
+  const insertImages = useCallback(async (files: File[], at?: Pt) => {
+    if (!canEdit) return;
+    const imgs = files.filter((f) => f.type.startsWith("image/"));
+    if (!imgs.length) return;
+    const center = at ?? { x: (size.w / 2 - view.x) / view.scale, y: (size.h / 2 - view.y) / view.scale };
+    let offset = 0;
+    for (const file of imgs) {
+      let w = 0, h = 0;
+      try {
+        const bmp = await createImageBitmap(file);
+        w = bmp.width; h = bmp.height;
+        bmp.close();
+      } catch {
+        toast("error", `"${file.name}" não parece ser uma imagem válida.`);
+        continue;
+      }
+      const form = new FormData();
+      form.set("file", file);
+      form.set("width", String(w));
+      form.set("height", String(h));
+      toast("info", "Enviando imagem…");
+      const res = await uploadImageAction(board.id, form);
+      if (!res.ok) { toast("error", res.error); continue; }
+      const k = Math.min(1, 480 / Math.max(w, h)); // cabe num quadrado de 480
+      const iw = Math.round(w * k), ih = Math.round(h * k);
+      const id = actions.add(newImage(Math.round(center.x - iw / 2 + offset), Math.round(center.y - ih / 2 + offset), iw, ih, res.data.url, res.data.id));
+      setSel([id]);
+      offset += 24;
+    }
+    setTool("select");
+  }, [canEdit, size, view, board.id, actions, toast, setTool]);
+
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || ["INPUT", "TEXTAREA"].includes(t.tagName))) return;
+      const files = [...(e.clipboardData?.files ?? [])];
+      if (files.some((f) => f.type.startsWith("image/"))) { e.preventDefault(); insertImages(files); }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [insertImages]);
+
+  /* exportar PNG: só os objetos (sem seleção, cursores, lápis), fundo claro, ~2x a escala real */
+  const exportPng = () => {
+    const st = stageRef.current;
+    const b = union(items.map((i) => boxOf(i, byId)));
+    if (!st || !b) return toast("info", "O quadro está vazio.");
+    const pad = 48, top = 32; // folga + espaço para o título dos frames
+    const s = view.scale;
+    const area = { x: (b.x - pad) * s + view.x, y: (b.y - pad - top) * s + view.y, width: (b.w + pad * 2) * s, height: (b.h + pad * 2 + top) * s };
+    const pixelRatio = Math.max(0.1, Math.min(2 / s, 8000 / area.width, 8000 / area.height)); // limite do canvas do navegador
+    const others = st.getLayers().slice(1);
+    const tr = trRef.current, trNodes = tr?.nodes() ?? [];
+    others.forEach((l) => l.hide());
+    tr?.nodes([]);
+    let url: string;
+    try {
+      url = st.toDataURL({ ...area, pixelRatio });
+    } finally {
+      others.forEach((l) => l.show());
+      tr?.nodes(trNodes);
+    }
+    const img = new window.Image();
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = img.width; c.height = img.height;
+      const ctx = c.getContext("2d")!;
+      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--mb-canvas").trim() || SURFACE;
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0);
+      c.toBlob((blob) => {
+        if (!blob) return toast("error", "Não foi possível gerar a imagem.");
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `${title.replace(/[^\p{L}\p{N} _-]+/gu, "").trim() || "quadro"}.png`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        toast("success", "Imagem baixada");
+      }, "image/png");
+    };
+    img.src = url;
+  };
+
   /* mantém a barra de opções dentro da tela e fora da barra de ferramentas (mexe só no DOM, sem estado) */
   useLayoutEffect(() => {
     const el = barRef.current;
@@ -641,6 +752,13 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
       <div
         ref={wrap}
         className="fixed inset-0 touch-none overflow-hidden bg-canvas"
+        onDragOver={(e) => { if (canEdit && e.dataTransfer.types.includes("Files")) e.preventDefault(); }}
+        onDrop={(e) => {
+          if (!canEdit || !e.dataTransfer.files.length) return;
+          e.preventDefault();
+          const rect = e.currentTarget.getBoundingClientRect();
+          insertImages([...e.dataTransfer.files], toWorld(e.clientX - rect.left, e.clientY - rect.top));
+        }}
         style={{
           cursor: cursorStyle,
           backgroundImage: view.scale >= 0.3 ? "radial-gradient(var(--mb-canvas-grid) 1px, transparent 1px)" : undefined,
@@ -649,6 +767,16 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
         }}
       >
         <h1 className="sr-only">{title}</h1>
+        <input
+          ref={fileInput}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          multiple
+          className="hidden"
+          aria-hidden
+          tabIndex={-1}
+          onChange={(e) => { insertImages([...(e.target.files ?? [])]); e.target.value = ""; }}
+        />
         {size.w > 0 && (
           <Stage
             ref={stageRef}
@@ -731,6 +859,10 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
                 const b = normBox(draft.start, draft.cur);
                 return <Rect x={b.x} y={b.y} width={b.w} height={b.h} fill={SELECTION} opacity={0.08} stroke={SELECTION} strokeWidth={sw} listening={false} />;
               })()}
+              {draft?.kind === "frame" && (() => {
+                const b = normBox(draft.start, draft.cur);
+                return <Rect x={b.x} y={b.y} width={b.w} height={b.h} stroke={SELECTION} strokeWidth={1.5 * sw} dash={[6 * sw, 4 * sw]} cornerRadius={4} listening={false} />;
+              })()}
               {draft?.kind === "shape" && (() => {
                 const b = normBox(draft.start, draft.cur);
                 return <Rect x={b.x} y={b.y} width={b.w} height={b.h} stroke={SELECTION} strokeWidth={1.5 * sw} dash={[6 * sw, 4 * sw]} cornerRadius={shapeKind === "ellipse" ? Math.min(b.w, b.h) / 2 : 6} listening={false} />;
@@ -809,7 +941,7 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
         {composer && <NewCommentBox at={toScreen(composer.x, composer.y)} onSend={sendNew} onCancel={() => setComposer(null)} />}
 
         {/* edição de texto sobre o canvas */}
-        {editingItem && editingItem.type !== "stroke" && (
+        {editingItem && editingItem.type !== "stroke" && editingItem.type !== "image" && (
           <TextEditor
             key={editingItem.id}
             item={editingItem}
@@ -821,6 +953,7 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
               newTextId.current = null;
               setEditing(null);
               if (it.type === "connector") { if (text !== it.label) actions.update(it.id, { label: text.trim() }); return; }
+              if (it.type === "frame") { if (text.trim() !== it.title) actions.update(it.id, { title: text.trim().slice(0, 80) }); return; }
               if (it.type === "text" && !text.trim()) { actions.remove([it.id]); setSel([]); if (isNewText) actions.stopCapturing(); return; }
               if (text === it.text) return;
               actions.update(it.id, it.type === "text" ? { text, h: measureTextHeight({ ...it, text }) } : { text });
@@ -848,7 +981,7 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
 
         {/* cromo */}
         <div className="pointer-events-none absolute inset-0">
-          <div className="pointer-events-auto absolute left-3 top-3 flex items-center gap-1 rounded-lg bg-surface p-1 pr-3 shadow-md">
+          <div className="pointer-events-auto absolute left-3 top-3 flex items-center gap-1 rounded-lg bg-surface p-1 shadow-md">
             {me.kind === "user" && (
               <IconButton label="Voltar aos quadros" size="sm" tooltipSide="bottom" onClick={() => router.push("/")}><ArrowLeft /></IconButton>
             )}
@@ -857,6 +990,7 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
             ) : (
               <span className={`max-w-60 truncate text-sm font-semibold ${me.kind === "user" ? "" : "pl-2"}`} title={title}>{title}</span>
             )}
+            <IconButton label="Baixar como imagem (PNG)" size="sm" tooltipSide="bottom" onClick={exportPng}><Download /></IconButton>
           </div>
 
           <div className="pointer-events-auto absolute left-3 top-1/2 flex -translate-y-1/2 items-start gap-2">
@@ -952,8 +1086,8 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
 const Kbd = ({ children }: { children: string }) => <kbd className="rounded-sm border border-border bg-surface px-1.5 font-semibold">{children}</kbd>;
 
 /* ----------------------------------------------------------------- editor de texto (textarea sobre o canvas) */
-function TextEditor({ item, byId, view, onCommit }: { item: Exclude<Item, { type: "stroke" }>; byId: Map<string, Item>; view: View; onCommit: (text: string) => void }) {
-  const [text, setText] = useState(item.type === "connector" ? item.label : item.text);
+function TextEditor({ item, byId, view, onCommit }: { item: Exclude<Item, { type: "stroke" } | { type: "image" }>; byId: Map<string, Item>; view: View; onCommit: (text: string) => void }) {
+  const [text, setText] = useState(item.type === "connector" ? item.label : item.type === "frame" ? item.title : item.text);
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { ref.current?.focus(); ref.current?.select(); }, []);
   const s = view.scale;
@@ -965,6 +1099,9 @@ function TextEditor({ item, byId, view, onCommit }: { item: Exclude<Item, { type
     const mid = { x: ((a.x + b.x) / 2) * s + view.x, y: ((a.y + b.y) / 2) * s + view.y };
     label = "Rótulo da seta";
     style = { left: mid.x - 90, top: mid.y - 16, width: 180, height: 32, fontSize: 14, textAlign: "center", padding: 6, background: "var(--mb-surface)", borderRadius: 6, boxShadow: "var(--mb-shadow-md)" };
+  } else if (item.type === "frame") {
+    label = "Nome do frame";
+    style = { left: item.x * view.scale + view.x, top: item.y * view.scale + view.y - 30, width: Math.max(160, Math.min(item.w * view.scale, 320)), height: 28, fontSize: 15, fontWeight: 600, padding: 4, background: "var(--mb-surface)", borderRadius: 6, boxShadow: "var(--mb-shadow-md)" };
   } else {
     const base: React.CSSProperties = {
       left: item.x * s + view.x, top: item.y * s + view.y, width: item.w * s, transformOrigin: "0 0", transform: item.rotation ? `rotate(${item.rotation}deg)` : undefined, lineHeight: 1.25,
@@ -989,11 +1126,11 @@ function TextEditor({ item, byId, view, onCommit }: { item: Exclude<Item, { type
       ref={ref}
       aria-label={label}
       value={text}
-      maxLength={item.type === "connector" ? 80 : 2000}
+      maxLength={item.type === "connector" || item.type === "frame" ? 80 : 2000}
       onChange={(e) => setText(e.target.value)}
       onBlur={() => onCommit(text)}
       onKeyDown={(e) => {
-        const enterCommits = item.type === "connector" && e.key === "Enter";
+        const enterCommits = (item.type === "connector" || item.type === "frame") && e.key === "Enter";
         if (e.key === "Escape" || enterCommits || (e.key === "Enter" && (e.ctrlKey || e.metaKey))) { e.preventDefault(); onCommit(text); }
         e.stopPropagation();
       }}

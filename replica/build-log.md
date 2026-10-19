@@ -122,3 +122,23 @@ Pedido do usuário: desenhar para apontar coisas aos alunos e o traço ir sumind
 **Verificado:** opacidade 0,65 logo depois de desenhar → 0,29 após 1s → nada após 3s; outro participante recebeu 86
 atualizações do rastro enquanto eu desenhava (script `realtime/scripts/watch-laser.mjs`).
 **Não verificado:** o desenho na tela de um 2º navegador (só os dados recebidos).
+
+## M4 · Comentários, frames, imagens, exportar (2026-10-19)
+
+| área | status | o que falta | o que foi mais difícil que o esperado |
+| --- | --- | --- | --- |
+| S08 Comentários | done | @menções e e-mail (could) | quem só comenta não escreve no doc: comentários vão para o banco e o tempo real só avisa "mudou" (`POST /notify` → mensagem stateless) |
+| Frames | done | — | o corpo do frame não captura clique (dá para fazer laço dentro); o frame se pega pelo título |
+| Imagens | done | testar no Supabase Storage | server action limitada a 1 MB por padrão: subi para 11 MB no next.config |
+| Exportar | partial | PDF | — |
+
+**Verificado no navegador** (quadro de teste):
+- comentário criado com `C` + clique, preso ao sticky clicado;
+- resposta de outra pessoa apareceu na hora, sem recarregar;
+- "Resolver" esconde o pino e zera o contador;
+- frame criado com `F`; arrastar pelo título levou junto o sticky de dentro (mesmo deslocamento);
+- imagem por colar e por soltar, reduzida para 480×320 e servida pela rota protegida (403 sem cookie, 404 com id inválido);
+- PNG de 1495×1620 gerado (o download foi interceptado no teste).
+
+**Não verificado:** comentários e imagens no modo Supabase; o botão "Imagem" da barra (abre o seletor de arquivos do sistema);
+o visual do PNG exportado.

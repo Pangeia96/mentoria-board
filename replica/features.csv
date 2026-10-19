@@ -18,8 +18,8 @@ Setas/conectores presos a objetos,objetos,must,yes,yes,atalho L; acompanham ao m
 Conector: reta / cotovelo / curva + pontas de seta + rótulo,objetos,should,yes,yes,M2: reta/cotovelo/curva; setas início/fim; cor; espessura; rótulo
 Pontos azuis de criação rápida (cria objeto ligado),objetos,could,yes,no,
 Caneta (desenho livre) + borracha,objetos,must,yes,yes,atalho P · M2: cor; espessura; borracha (E)
-Frames (áreas nomeadas que agrupam conteúdo),objetos,should,yes,no,atalho F; bom para separar etapas da mentoria
-Imagens (upload / colar),objetos,should,yes,no,precisa de storage
+Frames (áreas nomeadas que agrupam conteúdo),objetos,should,yes,yes,atalho F; bom para separar etapas da mentoria · M4: F + arrastar; arrastar o frame pelo título leva o que está dentro; fundo e nome editáveis
+Imagens (upload / colar),objetos,should,yes,yes,precisa de storage · M4: botão; Ctrl+V e soltar arquivo; PNG/JPG/WebP/GIF até 10 MB; assinatura do arquivo conferida; servidas por rota com checagem de acesso
 Converter objeto (sticky <-> forma <-> texto),objetos,could,yes,partial,M2: troca entre tipos de forma; sticky<->forma ainda não
 Edição simultânea em tempo real (< 200 ms),tempo real,must,yes,yes,CRDT · Hocuspocus + Yjs; testado com visitante simulado
 Cursores ao vivo com nome e cor,tempo real,must,yes,yes,
@@ -38,11 +38,12 @@ Visitante entra sem conta digitando o nome,compartilhar,must,yes,yes,S06; senão
 Revogar link / remover pessoa (expulsa quem está dentro),compartilhar,must,yes,yes,F10 · M3: remover visitante e gerar link novo expulsam na hora (POST /kick) + reconferência a cada 30s
 Convite por e-mail,compartilhar,could,yes,no,
 Permissões aplicadas no servidor de tempo real,compartilhar,must,yes,yes,viewer não pode escrever mesmo forçando · readOnly no Hocuspocus; testado com viewer
-Comentários em ponto ou objeto + respostas + resolver,comentários,should,yes,no,S08; Shift+C
+Comentários em ponto ou objeto + respostas + resolver,comentários,should,yes,yes,S08; Shift+C · M4: C + clique (prende ao objeto clicado); respostas; resolver/reabrir; painel; Shift+C esconde; ao vivo via /notify; quem só vê não comenta
 Menções @ e notificação por e-mail,comentários,could,yes,no,
 Votação em stickies,facilitação,could,yes,no,
 Timer da sessão,facilitação,could,yes,no,
-Exportar quadro como imagem/PDF,exportar,should,yes,no,cliente leva o resultado da sessão
+Lápis mágico (traço que some sozinho em câmera lenta),facilitação,should,no,yes,pedido do mentor: K; some em 2;5s; ao vivo para todos; não salva; funciona até para quem só vê
+Exportar quadro como imagem/PDF,exportar,should,yes,partial,cliente leva o resultado da sessão · M4: PNG 2x sem seleção/cursores; PDF ainda não
 Histórico de versões,exportar,could,yes,no,
 Modo leitura no celular,plataforma,should,yes,no,
 Atalhos de teclado principais,plataforma,should,yes,partial,lista no artigo Shortcuts · V H N Esc Del Enter Ctrl+Z/Y Ctrl+0/+/- Alt+1 · M2: + S R O T L P E; Ctrl+A/C/X/V/D; Ctrl+B/I/U; PgUp/PgDn; setas
