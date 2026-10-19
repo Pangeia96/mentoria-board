@@ -1,0 +1,19 @@
+{
+  "name": "realtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=.env src/server.mjs",
+    "start": "node --env-file-if-exists=.env src/server.mjs",
+    "test:guest": "node --env-file-if-exists=.env scripts/fake-guest.mjs"
+  },
+  "dependencies": {
+    "@hocuspocus/provider": "^4.7.1",
+    "@hocuspocus/server": "^4.7.1",
+    "jose": "^6.2.12",
+    "ws": "^8.22.0",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.33"
+  }
+}
