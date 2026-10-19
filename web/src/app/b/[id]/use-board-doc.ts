@@ -8,19 +8,11 @@ import type { Actor } from "@/lib/auth";
 /** Origem das transações deste navegador: o UndoManager só desfaz o que tiver esta origem. */
 export const LOCAL = Symbol("local");
 
-export type StickyItem = {
-  id: string;
-  type: "sticky";
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  color: string; // nome do token sticky.*
-  text: string;
-  z: number;
-  createdBy: string;
-};
-export type Item = StickyItem;
+import type { Item, ItemPatch } from "./board/model";
+export type { Item } from "./board/model";
+
+/** Itens antigos (M1) não tinham rotation/locked: completa com padrões ao ler. */
+const normalize = (raw: Record<string, unknown>, id: string): Item => ({ rotation: 0, locked: false, ...raw, id }) as Item;
 
 export type PresenceState = {
   user: { id: string; name: string; color: string; kind: Actor["kind"] };
@@ -99,7 +91,7 @@ export function useBoardDoc({ boardId, token, wsUrl, me }: { boardId: string; to
     const read = () =>
       setSnapshot(
         [...items.entries()]
-          .map(([id, m]) => ({ ...(m.toJSON() as Omit<Item, "id">), id }) as Item)
+          .map(([id, m]) => normalize(m.toJSON(), id))
           .sort((a, b) => a.z - b.z),
       );
     read();
@@ -118,24 +110,70 @@ export function useBoardDoc({ boardId, token, wsUrl, me }: { boardId: string; to
 
   const actions = useMemo(
     () => ({
-      addSticky(pos: { x: number; y: number }, color: string) {
+      /** Cria um item (z no topo) e devolve o id. */
+      add(fields: Omit<Item, "id" | "z" | "createdBy">) {
         const id = crypto.randomUUID();
         const maxZ = Math.max(0, ...[...items.values()].map((m) => Number(m.get("z") ?? 0)));
         doc.transact(() => {
           const m = new Y.Map<unknown>();
-          const it: Omit<StickyItem, "id"> = { type: "sticky", x: pos.x, y: pos.y, w: 200, h: 200, color, text: "", z: maxZ + 1, createdBy: me.id };
-          Object.entries(it).forEach(([k, v]) => m.set(k, v));
+          Object.entries({ ...fields, z: maxZ + 1, createdBy: me.id }).forEach(([k, v]) => m.set(k, v));
           items.set(id, m);
         }, LOCAL);
         return id;
       },
-      update(id: string, patch: Partial<Omit<Item, "id" | "type">>) {
+      /** Duplica itens (deslocados) numa transação; devolve os novos ids na mesma ordem. */
+      clone(list: Item[], dx: number, dy: number) {
+        let z = Math.max(0, ...[...items.values()].map((m) => Number(m.get("z") ?? 0)));
+        const map = new Map<string, string>();
+        list.forEach((it) => map.set(it.id, crypto.randomUUID()));
+        doc.transact(() => {
+          [...list].sort((a, b) => a.z - b.z).forEach((it) => {
+            const m = new Y.Map<unknown>();
+            const copy: Record<string, unknown> = { ...it, x: it.x + dx, y: it.y + dy, z: ++z, createdBy: me.id };
+            delete copy.id;
+            if (it.type === "connector") {
+              // a seta continua presa às cópias, se elas vieram junto; senão vira ponta solta
+              const end = (e: typeof it.from) => (e.itemId && map.has(e.itemId) ? { ...e, itemId: map.get(e.itemId)! } : { itemId: null, x: e.x + dx, y: e.y + dy });
+              copy.from = end(it.from);
+              copy.to = end(it.to);
+            }
+            Object.entries(copy).forEach(([k, v]) => m.set(k, v));
+            items.set(map.get(it.id)!, m);
+          });
+        }, LOCAL);
+        return list.map((it) => map.get(it.id)!);
+      },
+      update(id: string, patch: ItemPatch) {
         const m = items.get(id);
         if (!m) return;
         doc.transact(() => Object.entries(patch).forEach(([k, v]) => m.set(k, v)), LOCAL);
       },
+      updateMany(patches: { id: string; patch: ItemPatch }[]) {
+        doc.transact(() => patches.forEach(({ id, patch }) => {
+          const m = items.get(id);
+          if (m) Object.entries(patch).forEach(([k, v]) => m.set(k, v));
+        }), LOCAL);
+      },
       remove(ids: string[]) {
-        doc.transact(() => ids.forEach((id) => items.delete(id)), LOCAL);
+        doc.transact(() => {
+          const gone = new Set(ids);
+          ids.forEach((id) => items.delete(id));
+          // setas presas a itens apagados viram pontas soltas no lugar onde estavam
+          items.forEach((m) => {
+            if (m.get("type") !== "connector") return;
+            (["from", "to"] as const).forEach((k) => {
+              const e = m.get(k) as { itemId: string | null; x: number; y: number };
+              if (e?.itemId && gone.has(e.itemId)) m.set(k, { ...e, itemId: null });
+            });
+          });
+        }, LOCAL);
+      },
+      /** Traz para a frente (+1) ou manda para trás (-1) mantendo a ordem relativa. */
+      reorder(ids: string[], dir: 1 | -1) {
+        const zs = [...items.values()].map((m) => Number(m.get("z") ?? 0));
+        let next = dir === 1 ? Math.max(0, ...zs) : Math.min(0, ...zs);
+        const sel = ids.map((id) => ({ id, z: Number(items.get(id)?.get("z") ?? 0) })).sort((a, b) => (a.z - b.z) * dir);
+        doc.transact(() => sel.forEach(({ id }) => items.get(id)?.set("z", (next += dir))), LOCAL);
       },
       undo: () => undo.undo(),
       redo: () => undo.redo(),

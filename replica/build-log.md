@@ -47,3 +47,29 @@ desempenho com centenas de itens.
 `DataLayer` que a versão Supabase vai implementar. Documentos Yjs em `.data/docs/*.bin`.
 
 Matriz (`features.csv`): must-haves 8 `yes` + 8 `partial` de 22.
+
+## M2 · Canvas completo (2026-10-19)
+
+Pedido do usuário: "faltam setas, formas, texto". Entrou tudo o que é must-have de canvas.
+
+| área | status | o que falta | o que foi mais difícil que o esperado |
+| --- | --- | --- | --- |
+| Formas | done | converter sticky↔forma | — |
+| Texto livre | done | edição colaborativa letra a letra (`Y.Text`) | altura do texto medida com um `Konva.Text` fora da tela |
+| Setas | done | encaixe em pontos laterais (hoje sempre pela borda, mirando o centro) | apagar um item preso precisa "congelar" a ponta antes, senão a seta pula para a posição antiga |
+| Caneta/borracha | done | suavização melhor; pressão da caneta | — |
+| Seleção | done | agrupar (Ctrl+G), Alt+arrastar para duplicar | arrastar em grupo: o Konva só move o nó arrastado, os outros são movidos pelo doc |
+| Redimensionar/girar | done | — | o Transformer muda `scale`, que precisa ser convertido em largura/altura e zerado |
+| Barra de opções | done | — | ficava fora da tela perto da borda: agora se ajusta (só DOM, sem estado) |
+| Toque | partial | testar em aparelho real | — |
+
+Arquivos: `b/[id]/board/model.ts` (tipos + geometria pura), `board/nodes.tsx` (desenho Konva),
+`board/context-bar.tsx` (barras), `board-room.tsx` (ferramentas e eventos), `use-board-doc.ts` (ações no Yjs).
+
+**Verificado no navegador** (inspecionando o Konva, porque o screenshot do painel tem escala diferente
+das coordenadas de clique): criar forma por clique, texto livre, seta presa que acompanha ao mover a forma,
+caneta, borracha, desfazer, Ctrl+A, Ctrl+D (seta duplicada presa às cópias), redimensionar pela alça,
+trocar para círculo pela barra. **Por script:** um 2º participante recebe sticky, forma, texto, seta e traço.
+**Não verificado:** girar pela alça, rótulo da seta, pinça em aparelho real, dois navegadores lado a lado.
+
+Matriz: must-haves 15 `yes` + 6 `partial` + 1 `no` (revogar acesso, M3) de 22.

@@ -1,26 +1,26 @@
 feature,area,priority,original,clone,notes
-Canvas infinito com pan (Space+arrastar / roda) e zoom (Ctrl+roda / pinça),canvas,must,yes,partial,S04 · M1: roda/Ctrl+roda/Space/mão; falta pinça no toque
+Canvas infinito com pan (Space+arrastar / roda) e zoom (Ctrl+roda / pinça),canvas,must,yes,partial,S04 · M1: roda/Ctrl+roda/Space/mão; falta pinça no toque · M2: pinça com dois dedos implementada; não testada em aparelho real
 Zoom para caber / 100% / para seleção,canvas,should,yes,partial,Alt+1 / Ctrl+0 / Alt+2 · M1: ajustar à tela e 100%; falta zoom na seleção
 Minimapa,canvas,could,yes,no,atalho M
 Grade liga/desliga,canvas,could,yes,no,atalho G
-Selecionar / laço de seleção / Ctrl+A,canvas,must,yes,partial,M1: só clique em 1 item; laço e Ctrl+A no M2
-Mover redimensionar e girar objetos,canvas,must,yes,partial,SelectionBox · M1: só mover; redimensionar/girar no M2
+Selecionar / laço de seleção / Ctrl+A,canvas,must,yes,yes,M1: só clique em 1 item; laço e Ctrl+A no M2 · M2: laço; Shift+clique; Ctrl+A
+Mover redimensionar e girar objetos,canvas,must,yes,yes,SelectionBox · M1: só mover; redimensionar/girar no M2 · M2: arrastar em grupo; alças de redimensionar e girar (snap de 45°)
 Desfazer / refazer por usuário,canvas,must,yes,yes,Ctrl+Z só desfaz as próprias ações · Y.UndoManager só com origem local
-Copiar colar duplicar (Ctrl+D / Alt+arrastar),canvas,must,yes,no,
-Agrupar (Ctrl+G) e ordem z (trazer à frente / enviar para trás),canvas,should,yes,no,PgUp / Shift+PgUp
-Travar objeto,canvas,should,yes,no,útil para o mentor fixar a estrutura do exercício
+Copiar colar duplicar (Ctrl+D / Alt+arrastar),canvas,must,yes,yes,M2: Ctrl+C/X/V e Ctrl+D (setas seguem as cópias); Alt+arrastar ainda não
+Agrupar (Ctrl+G) e ordem z (trazer à frente / enviar para trás),canvas,should,yes,partial,PgUp / Shift+PgUp · M2: ordem na frente/atrás; agrupar ainda não
+Travar objeto,canvas,should,yes,yes,útil para o mentor fixar a estrutura do exercício · M2: Ctrl+Shift+L ou cadeado na barra
 Sticky note: criar editar cor,objetos,must,yes,yes,atalho N; texto encolhe para caber · texto é string (último a gravar vence); Y.Text no M2
 Sticky note: tags,objetos,could,yes,no,até 8 por sticky no original
 Sticky note: bulk mode (várias de uma vez),objetos,could,yes,no,Enter separa ideias
-Formas básicas (retângulo círculo triângulo losango) com cor borda opacidade,objetos,must,yes,no,atalhos S R O
-Texto livre com negrito itálico sublinhado,objetos,must,yes,no,Ctrl+B/I/U
-Setas/conectores presos a objetos,objetos,must,yes,no,atalho L; acompanham ao mover
-Conector: reta / cotovelo / curva + pontas de seta + rótulo,objetos,should,yes,no,
+Formas básicas (retângulo círculo triângulo losango) com cor borda opacidade,objetos,must,yes,yes,atalhos S R O · M2: retângulo; círculo; triângulo; losango; preenchimento; borda e espessura; texto dentro
+Texto livre com negrito itálico sublinhado,objetos,must,yes,yes,Ctrl+B/I/U · M2: tamanho; cor; B/I/U; alinhamento
+Setas/conectores presos a objetos,objetos,must,yes,yes,atalho L; acompanham ao mover · M2: presas ao centro da caixa; pontas arrastáveis para trocar de objeto
+Conector: reta / cotovelo / curva + pontas de seta + rótulo,objetos,should,yes,yes,M2: reta/cotovelo/curva; setas início/fim; cor; espessura; rótulo
 Pontos azuis de criação rápida (cria objeto ligado),objetos,could,yes,no,
-Caneta (desenho livre) + borracha,objetos,must,yes,no,atalho P
+Caneta (desenho livre) + borracha,objetos,must,yes,yes,atalho P · M2: cor; espessura; borracha (E)
 Frames (áreas nomeadas que agrupam conteúdo),objetos,should,yes,no,atalho F; bom para separar etapas da mentoria
 Imagens (upload / colar),objetos,should,yes,no,precisa de storage
-Converter objeto (sticky <-> forma <-> texto),objetos,could,yes,no,
+Converter objeto (sticky <-> forma <-> texto),objetos,could,yes,partial,M2: troca entre tipos de forma; sticky<->forma ainda não
 Edição simultânea em tempo real (< 200 ms),tempo real,must,yes,yes,CRDT · Hocuspocus + Yjs; testado com visitante simulado
 Cursores ao vivo com nome e cor,tempo real,must,yes,yes,
 Lista de quem está no quadro,tempo real,must,yes,partial,S09 · M1: avatares na barra; painel S09 no M3
@@ -45,7 +45,7 @@ Timer da sessão,facilitação,could,yes,no,
 Exportar quadro como imagem/PDF,exportar,should,yes,no,cliente leva o resultado da sessão
 Histórico de versões,exportar,could,yes,no,
 Modo leitura no celular,plataforma,should,yes,no,
-Atalhos de teclado principais,plataforma,should,yes,partial,lista no artigo Shortcuts · V H N Esc Del Enter Ctrl+Z/Y Ctrl+0/+/- Alt+1
+Atalhos de teclado principais,plataforma,should,yes,partial,lista no artigo Shortcuts · V H N Esc Del Enter Ctrl+Z/Y Ctrl+0/+/- Alt+1 · M2: + S R O T L P E; Ctrl+A/C/X/V/D; Ctrl+B/I/U; PgUp/PgDn; setas
 Biblioteca de templates do Miro,skip,skip,yes,no,conteúdo deles; criar templates próprios de mentoria
 Pacotes de formas e ícones licenciados,skip,skip,yes,no,usar conjunto aberto
 Escala de 200+ pessoas simultâneas,skip,skip,yes,no,meta: 2 a 15 por quadro
