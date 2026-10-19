@@ -1,15 +1,15 @@
 feature,area,priority,original,clone,notes
-Canvas infinito com pan (Space+arrastar / roda) e zoom (Ctrl+roda / pinça),canvas,must,yes,no,S04
-Zoom para caber / 100% / para seleção,canvas,should,yes,no,Alt+1 / Ctrl+0 / Alt+2
+Canvas infinito com pan (Space+arrastar / roda) e zoom (Ctrl+roda / pinça),canvas,must,yes,partial,S04 · M1: roda/Ctrl+roda/Space/mão; falta pinça no toque
+Zoom para caber / 100% / para seleção,canvas,should,yes,partial,Alt+1 / Ctrl+0 / Alt+2 · M1: ajustar à tela e 100%; falta zoom na seleção
 Minimapa,canvas,could,yes,no,atalho M
 Grade liga/desliga,canvas,could,yes,no,atalho G
-Selecionar / laço de seleção / Ctrl+A,canvas,must,yes,no,
-Mover redimensionar e girar objetos,canvas,must,yes,no,SelectionBox
-Desfazer / refazer por usuário,canvas,must,yes,no,Ctrl+Z só desfaz as próprias ações
+Selecionar / laço de seleção / Ctrl+A,canvas,must,yes,partial,M1: só clique em 1 item; laço e Ctrl+A no M2
+Mover redimensionar e girar objetos,canvas,must,yes,partial,SelectionBox · M1: só mover; redimensionar/girar no M2
+Desfazer / refazer por usuário,canvas,must,yes,yes,Ctrl+Z só desfaz as próprias ações · Y.UndoManager só com origem local
 Copiar colar duplicar (Ctrl+D / Alt+arrastar),canvas,must,yes,no,
 Agrupar (Ctrl+G) e ordem z (trazer à frente / enviar para trás),canvas,should,yes,no,PgUp / Shift+PgUp
 Travar objeto,canvas,should,yes,no,útil para o mentor fixar a estrutura do exercício
-Sticky note: criar editar cor,objetos,must,yes,no,atalho N; texto encolhe para caber
+Sticky note: criar editar cor,objetos,must,yes,yes,atalho N; texto encolhe para caber · texto é string (último a gravar vence); Y.Text no M2
 Sticky note: tags,objetos,could,yes,no,até 8 por sticky no original
 Sticky note: bulk mode (várias de uma vez),objetos,could,yes,no,Enter separa ideias
 Formas básicas (retângulo círculo triângulo losango) com cor borda opacidade,objetos,must,yes,no,atalhos S R O
@@ -21,23 +21,23 @@ Caneta (desenho livre) + borracha,objetos,must,yes,no,atalho P
 Frames (áreas nomeadas que agrupam conteúdo),objetos,should,yes,no,atalho F; bom para separar etapas da mentoria
 Imagens (upload / colar),objetos,should,yes,no,precisa de storage
 Converter objeto (sticky <-> forma <-> texto),objetos,could,yes,no,
-Edição simultânea em tempo real (< 200 ms),tempo real,must,yes,no,CRDT
-Cursores ao vivo com nome e cor,tempo real,must,yes,no,
-Lista de quem está no quadro,tempo real,must,yes,no,S09
+Edição simultânea em tempo real (< 200 ms),tempo real,must,yes,yes,CRDT · Hocuspocus + Yjs; testado com visitante simulado
+Cursores ao vivo com nome e cor,tempo real,must,yes,yes,
+Lista de quem está no quadro,tempo real,must,yes,partial,S09 · M1: avatares na barra; painel S09 no M3
 Seguir um participante,tempo real,should,yes,no,
 Trazer todos para minha visão,tempo real,should,yes,no,essencial para o mentor guiar a sessão
 Esconder cursores,tempo real,could,yes,no,
-Reconexão automática e edição offline curta,tempo real,must,yes,no,ConnectionBanner
-Salvamento automático contínuo,tempo real,must,yes,no,sem botão salvar
-Login do mentor (e-mail / Google),contas,must,yes,no,S01
-Painel de quadros com busca,contas,must,yes,no,S02
-Criar renomear duplicar apagar quadro,contas,must,yes,no,S03 S10
-Campo cliente no quadro / filtro por cliente,contas,should,no,no,específico da mentoria (não existe no Miro)
-Link de compartilhamento com papel (editar / comentar / ver),compartilhar,must,yes,no,S05
-Visitante entra sem conta digitando o nome,compartilhar,must,yes,no,S06; senão nome aleatório
+Reconexão automática e edição offline curta,tempo real,must,yes,partial,ConnectionBanner · M1: reconecta + banner; offline com y-indexeddb no M2
+Salvamento automático contínuo,tempo real,must,yes,yes,sem botão salvar · M1 grava em arquivo (.data/docs); Postgres no backend
+Login do mentor (e-mail / Google),contas,must,yes,partial,S01 · M1: login de desenvolvimento sem senha
+Painel de quadros com busca,contas,must,yes,yes,S02
+Criar renomear duplicar apagar quadro,contas,must,yes,partial,S03 S10 · M1: só criar
+Campo cliente no quadro / filtro por cliente,contas,should,no,partial,específico da mentoria (não existe no Miro) · campo + busca; falta filtro dedicado
+Link de compartilhamento com papel (editar / comentar / ver),compartilhar,must,yes,partial,S05 · M1: 1 link fixo "pode editar"
+Visitante entra sem conta digitando o nome,compartilhar,must,yes,yes,S06; senão nome aleatório
 Revogar link / remover pessoa (expulsa quem está dentro),compartilhar,must,yes,no,F10
 Convite por e-mail,compartilhar,could,yes,no,
-Permissões aplicadas no servidor de tempo real,compartilhar,must,yes,no,viewer não pode escrever mesmo forçando
+Permissões aplicadas no servidor de tempo real,compartilhar,must,yes,yes,viewer não pode escrever mesmo forçando · readOnly no Hocuspocus; testado com viewer
 Comentários em ponto ou objeto + respostas + resolver,comentários,should,yes,no,S08; Shift+C
 Menções @ e notificação por e-mail,comentários,could,yes,no,
 Votação em stickies,facilitação,could,yes,no,
@@ -45,7 +45,7 @@ Timer da sessão,facilitação,could,yes,no,
 Exportar quadro como imagem/PDF,exportar,should,yes,no,cliente leva o resultado da sessão
 Histórico de versões,exportar,could,yes,no,
 Modo leitura no celular,plataforma,should,yes,no,
-Atalhos de teclado principais,plataforma,should,yes,no,lista no artigo Shortcuts
+Atalhos de teclado principais,plataforma,should,yes,partial,lista no artigo Shortcuts · V H N Esc Del Enter Ctrl+Z/Y Ctrl+0/+/- Alt+1
 Biblioteca de templates do Miro,skip,skip,yes,no,conteúdo deles; criar templates próprios de mentoria
 Pacotes de formas e ícones licenciados,skip,skip,yes,no,usar conjunto aberto
 Escala de 200+ pessoas simultâneas,skip,skip,yes,no,meta: 2 a 15 por quadro
