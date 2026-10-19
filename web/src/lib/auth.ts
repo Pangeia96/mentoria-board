@@ -1,13 +1,15 @@
 // Sessão do mentor, cookie do visitante e token do servidor de tempo real.
-// M1: login de desenvolvimento (e-mail + nome, sem senha). No /replica-backend vira Supabase Auth.
+// Com Supabase: sessão do Supabase Auth (cookies http-only via @supabase/ssr, renovada no proxy.ts).
+// Sem Supabase (dev): login de desenvolvimento com JWT próprio.
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import { data, type Role } from "./data";
+import { hasSupabase, userClient } from "./supabase/server";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const SESSION_SECRET = enc(process.env.SESSION_SECRET ?? "dev-only-session-secret-0123456789abcdef");
 const REALTIME_SECRET = enc(process.env.REALTIME_SECRET ?? "dev-only-secret-change-me-0123456789");
-const SESSION_COOKIE = "mb_session";
+const DEV_SESSION_COOKIE = "mb_session";
 const guestCookie = (boardId: string) => `mb_g_${boardId}`;
 const cookieOpts = { httpOnly: true, sameSite: "lax" as const, secure: process.env.NODE_ENV === "production", path: "/" };
 
@@ -24,14 +26,23 @@ async function verify<T>(token: string | undefined, secret: Uint8Array): Promise
 }
 
 /* ------------------------------------------------------------ mentor */
-export async function startSession(userId: string) {
-  (await cookies()).set(SESSION_COOKIE, await sign({ uid: userId }, SESSION_SECRET, "30d"), { ...cookieOpts, maxAge: 60 * 60 * 24 * 30 });
+/** Só no modo dev (sem Supabase). */
+export async function startDevSession(userId: string) {
+  (await cookies()).set(DEV_SESSION_COOKIE, await sign({ uid: userId }, SESSION_SECRET, "30d"), { ...cookieOpts, maxAge: 60 * 60 * 24 * 30 });
 }
+
 export async function endSession() {
-  (await cookies()).delete(SESSION_COOKIE);
+  if (hasSupabase) await (await userClient()).auth.signOut();
+  (await cookies()).delete(DEV_SESSION_COOKIE);
 }
+
 export async function currentUser() {
-  const s = await verify<{ uid: string }>((await cookies()).get(SESSION_COOKIE)?.value, SESSION_SECRET);
+  if (hasSupabase) {
+    // getUser() valida o token no servidor do Supabase (getSession() confiaria no cookie).
+    const { data: u } = await (await userClient()).auth.getUser();
+    return u.user ? data.getProfile(u.user.id) : null;
+  }
+  const s = await verify<{ uid: string }>((await cookies()).get(DEV_SESSION_COOKIE)?.value, SESSION_SECRET);
   return s ? data.getProfile(s.uid) : null;
 }
 
@@ -43,7 +54,7 @@ async function currentGuest(boardId: string) {
   const g = await verify<{ gid: string; bid: string }>((await cookies()).get(guestCookie(boardId))?.value, SESSION_SECRET);
   if (!g || g.bid !== boardId) return null;
   const guest = await data.getGuest(g.gid);
-  return guest && !guest.revokedAt ? guest : null;
+  return guest && !guest.revokedAt && guest.boardId === boardId ? guest : null;
 }
 
 /* ------------------------------------------------------------ quem está abrindo o quadro */
@@ -67,7 +78,7 @@ export async function actorForBoard(boardId: string): Promise<Actor | null> {
   return null;
 }
 
-/** Token curto que o navegador usa para entrar no Hocuspocus. */
+/** Token curto que o navegador usa para entrar no Hocuspocus. O servidor ainda reconfere no banco. */
 export function realtimeToken(boardId: string, a: Actor) {
   return sign({ sub: a.id, kind: a.kind, name: a.name, color: a.color, role: a.role, board: boardId }, REALTIME_SECRET, "12h");
 }

@@ -37,7 +37,8 @@ export type Guest = {
 
 /** Contrato da camada de dados. A versão fake (JSON) e a do Supabase implementam o mesmo. */
 export interface DataLayer {
-  upsertProfileByEmail(email: string, name: string): Promise<Profile>;
+  /** Só na camada fake (login de dev). No Supabase o perfil nasce pelo trigger do auth.users. */
+  upsertProfileByEmail?(email: string, name: string): Promise<Profile>;
   getProfile(id: string): Promise<Profile | null>;
 
   listBoards(ownerId: string, opts?: { q?: string }): Promise<Board[]>;

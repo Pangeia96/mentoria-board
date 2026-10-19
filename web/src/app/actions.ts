@@ -2,19 +2,58 @@
 
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
+import { z } from "zod";
 import { data } from "@/lib/data";
-import { colorFor, currentUser, endSession, setGuestCookie, startSession } from "@/lib/auth";
+import { colorFor, currentUser, endSession, setGuestCookie, startDevSession } from "@/lib/auth";
+import { hasSupabase, userClient } from "@/lib/supabase/server";
 
-export type FormState = { error?: string } | undefined;
+export type FormState = { error?: string; sent?: string } | undefined;
 
-/* ------------------------------------------------------------ S01 login (dev) */
-export async function devLogin(_: FormState, form: FormData): Promise<FormState> {
-  const email = String(form.get("email") ?? "").trim();
-  const name = String(form.get("name") ?? "");
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Digite um e-mail válido." };
-  const profile = await data.upsertProfileByEmail(email, name);
-  await startSession(profile.id);
-  redirect("/");
+const firstError = (e: z.ZodError) => e.issues[0]?.message ?? "Dados inválidos.";
+
+async function origin() {
+  if (process.env.APP_URL) return process.env.APP_URL;
+  const h = await headers();
+  return `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
+}
+
+/* ------------------------------------------------------------ S01 login */
+const LoginInput = z.object({
+  email: z.string().trim().toLowerCase().email("Digite um e-mail válido.").max(254),
+  name: z.string().trim().max(80, "Use no máximo 80 caracteres.").default(""),
+});
+
+/** Com Supabase: manda o link mágico (também cria a conta no 1º acesso). Sem Supabase: login de dev. */
+export async function signIn(_: FormState, form: FormData): Promise<FormState> {
+  const parsed = LoginInput.safeParse({ email: form.get("email"), name: form.get("name") ?? "" });
+  if (!parsed.success) return { error: firstError(parsed.error) };
+  const { email, name } = parsed.data;
+
+  if (!hasSupabase) {
+    const profile = await data.upsertProfileByEmail!(email, name);
+    await startDevSession(profile.id);
+    redirect("/");
+  }
+
+  const { error } = await (await userClient()).auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: `${await origin()}/auth/callback`, data: name ? { full_name: name } : undefined },
+  });
+  if (error) {
+    console.error(`[auth] otp: ${error.status ?? ""} ${error.code ?? ""}`);
+    return { error: error.status === 429 ? "Muitas tentativas. Espere um minuto e tente de novo." : "Não foi possível enviar o link agora." };
+  }
+  return { sent: email };
+}
+
+export async function signInWithGoogle() {
+  if (!hasSupabase) redirect("/login");
+  const { data: d, error } = await (await userClient()).auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: `${await origin()}/auth/callback` },
+  });
+  if (error || !d.url) redirect("/login?erro=google");
+  redirect(d.url);
 }
 
 export async function logout() {
@@ -23,42 +62,59 @@ export async function logout() {
 }
 
 /* ------------------------------------------------------------ S03 novo quadro */
+const BoardInput = z.object({
+  title: z.string().trim().min(1, "Dê um nome ao quadro.").max(120, "Use no máximo 120 caracteres."),
+  clientName: z.string().trim().max(120, "Use no máximo 120 caracteres.").transform((v) => v || null),
+});
+
 export async function createBoard(_: FormState, form: FormData): Promise<FormState> {
   const user = await currentUser();
   if (!user) redirect("/login");
-  const title = String(form.get("title") ?? "").trim();
-  const clientName = String(form.get("clientName") ?? "").trim() || null;
-  if (!title) return { error: "Dê um nome ao quadro." };
-  if (title.length > 120) return { error: "Use no máximo 120 caracteres." };
-  const board = await data.createBoard(user.id, { title, clientName });
-  redirect(`/b/${board.id}`);
+  const parsed = BoardInput.safeParse({ title: form.get("title") ?? "", clientName: form.get("clientName") ?? "" });
+  if (!parsed.success) return { error: firstError(parsed.error) };
+  let id: string;
+  try {
+    id = (await data.createBoard(user.id, parsed.data)).id;
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+  redirect(`/b/${id}`);
 }
 
 /* ------------------------------------------------------------ S05 link de compartilhamento */
 export async function getShareUrl(boardId: string): Promise<{ url?: string; error?: string }> {
+  if (!z.string().uuid().safeParse(boardId).success) return { error: "Quadro inválido." };
   const user = await currentUser();
   if (!user) return { error: "Faça login de novo." };
   if ((await data.getMemberRole(boardId, user.id)) !== "owner") return { error: "Só o dono do quadro pode compartilhar." };
-  const link = await data.getOrCreateShareLink(boardId, user.id);
-  const h = await headers();
-  const origin = process.env.APP_URL ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
-  return { url: `${origin}/j/${link.token}` };
+  try {
+    const link = await data.getOrCreateShareLink(boardId, user.id);
+    return { url: `${await origin()}/j/${link.token}` };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
 }
 
 /* ------------------------------------------------------------ S06 visitante entra */
 const RANDOM_NAMES = ["Visitante Curioso", "Visitante Criativo", "Visitante Atento", "Visitante Sonhador", "Visitante Ousado"];
+const GuestName = z.string().trim().max(60, "Use no máximo 60 caracteres.");
 
 export async function joinAsGuest(token: string, _: FormState, form: FormData): Promise<FormState> {
-  const link = await data.getShareLinkByToken(token);
-  if (!link || !link.enabled) redirect(`/j/${token}`); // a página mostra o S07
-  let name = String(form.get("name") ?? "").trim();
-  if (name.length > 60) return { error: "Use no máximo 60 caracteres." };
+  const link = await data.getShareLinkByToken(String(token));
+  if (!link || !link.enabled) redirect(`/j/${encodeURIComponent(token)}`); // a página mostra o S07
+  const parsed = GuestName.safeParse(form.get("name") ?? "");
+  if (!parsed.success) return { error: firstError(parsed.error) };
+  let name = parsed.data;
   if (!name) {
     if (link.askVisitorName) return { error: "Digite como você quer aparecer no quadro." };
     name = RANDOM_NAMES[Math.floor(Math.random() * RANDOM_NAMES.length)];
   }
-  const tmpId = crypto.randomUUID();
-  const guest = await data.createGuest({ boardId: link.boardId, shareLinkId: link.id, displayName: name, color: colorFor(tmpId) });
-  await setGuestCookie(link.boardId, guest.id);
+  let guestId: string;
+  try {
+    guestId = (await data.createGuest({ boardId: link.boardId, shareLinkId: link.id, displayName: name, color: colorFor(crypto.randomUUID()) })).id;
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+  await setGuestCookie(link.boardId, guestId);
   redirect(`/b/${link.boardId}`);
 }

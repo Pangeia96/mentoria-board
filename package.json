@@ -1,0 +1,14 @@
+{
+  "name": "mentoria-board",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "db:test": "node supabase/tests/rls.test.mjs supabase/tests/supabase-stub.sql supabase/migrations/20261019000000_init.sql",
+    "db:push": "npx supabase@2.121.0 db push",
+    "db:seed": "node --env-file=web/.env.local supabase/seed.mjs",
+    "tokens": "node replica/design/build-tokens.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8"
+  }
+}

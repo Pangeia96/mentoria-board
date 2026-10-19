@@ -13,11 +13,11 @@
 --     server actions do Next.js com a service role + checagem explícita do
 --     token do link/visitante, e pelo servidor Hocuspocus (onAuthenticate).
 
-create extension if not exists pgcrypto;
+create extension if not exists pgcrypto with schema extensions;
 
 -- ---------------------------------------------------------------- helpers
 create or replace function set_updated_at() returns trigger
-language plpgsql as $$
+language plpgsql set search_path = '' as $$
 begin
   new.updated_at = now();
   return new;
@@ -37,9 +37,9 @@ create trigger profiles_updated before update on profiles
 
 -- cria o profile automaticamente no cadastro
 create or replace function handle_new_user() returns trigger
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = '' as $$
 begin
-  insert into profiles (id, name, avatar_url)
+  insert into public.profiles (id, name, avatar_url)
   values (new.id,
           coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)),
           new.raw_user_meta_data->>'avatar_url');
@@ -81,9 +81,9 @@ create trigger board_members_updated before update on board_members
 
 -- o dono vira membro 'owner' automaticamente
 create or replace function add_owner_member() returns trigger
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = '' as $$
 begin
-  insert into board_members (board_id, user_id, role) values (new.id, new.owner_id, 'owner');
+  insert into public.board_members (board_id, user_id, role) values (new.id, new.owner_id, 'owner');
   return new;
 end $$;
 create trigger boards_add_owner after insert on boards
@@ -93,7 +93,7 @@ create trigger boards_add_owner after insert on boards
 create table share_links (
   id uuid primary key default gen_random_uuid(),
   board_id uuid not null references boards(id) on delete cascade,
-  token text not null unique default encode(gen_random_bytes(24), 'hex'),
+  token text not null unique default encode(extensions.gen_random_bytes(24), 'hex'),
   role text not null default 'editor' check (role in ('editor','commenter','viewer')),
   ask_visitor_name boolean not null default true,
   enabled boolean not null default true,
@@ -117,7 +117,7 @@ create table board_guests (
   board_id uuid not null references boards(id) on delete cascade,
   share_link_id uuid not null references share_links(id) on delete cascade,
   display_name text not null check (length(trim(display_name)) between 1 and 60),
-  color text not null check (color ~ '^#[0-9a-fA-F]{6}$'),
+  color text not null check (color ~ '^p[1-8]$'),  -- token de presença (tokens.json → presence.p1..p8)
   revoked_at timestamptz,
   last_seen_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
@@ -139,6 +139,16 @@ create table board_docs (
 );
 create trigger board_docs_updated before update on board_docs
   for each row execute function set_updated_at();
+
+-- Gravação atômica pelo servidor de tempo real (service role). version++ a cada store.
+create or replace function store_board_doc(b uuid, doc bytea) returns bigint
+language sql set search_path = '' as $$
+  insert into public.board_docs (board_id, ydoc, version) values (b, doc, 1)
+  on conflict (board_id) do update set ydoc = excluded.ydoc, version = public.board_docs.version + 1
+  returning version
+$$;
+revoke execute on function store_board_doc(uuid, bytea) from public, anon, authenticated;
+grant execute on function store_board_doc(uuid, bytea) to service_role;
 
 -- snapshots para histórico de versões / recuperação (should/could)
 create table board_snapshots (
@@ -209,9 +219,10 @@ create index board_assets_guest on board_assets (uploaded_by_guest);
 -- Visitantes: só via service role no servidor (RLS não se aplica), com checagem no código.
 
 create or replace function board_role(b uuid) returns text
-language sql stable security definer set search_path = public as $$
-  select role from board_members where board_id = b and user_id = auth.uid()
+language sql stable security definer set search_path = '' as $$
+  select role from public.board_members where board_id = b and user_id = (select auth.uid())
 $$;
+revoke execute on function board_role(uuid) from anon;
 
 alter table profiles        enable row level security;
 alter table boards          enable row level security;
@@ -224,17 +235,17 @@ alter table comment_threads enable row level security;
 alter table comments        enable row level security;
 alter table board_assets    enable row level security;
 
-create policy "ver próprio perfil" on profiles for select using (id = auth.uid());
-create policy "editar próprio perfil" on profiles for update using (id = auth.uid());
+create policy "ver próprio perfil" on profiles for select using (id = (select auth.uid()));
+create policy "editar próprio perfil" on profiles for update using (id = (select auth.uid()));
 
 create policy "membros veem o quadro" on boards for select
-  using (owner_id = auth.uid() or board_role(id) is not null);
+  using (owner_id = (select auth.uid()) or board_role(id) is not null);
 create policy "mentor cria quadro" on boards for insert
-  with check (owner_id = auth.uid());
+  with check (owner_id = (select auth.uid()));
 create policy "dono altera quadro" on boards for update
-  using (owner_id = auth.uid());
+  using (owner_id = (select auth.uid()));
 create policy "dono apaga quadro" on boards for delete
-  using (owner_id = auth.uid());
+  using (owner_id = (select auth.uid()));
 
 create policy "membros veem membros" on board_members for select
   using (board_role(board_id) is not null);
@@ -257,22 +268,22 @@ create policy "membros veem snapshots" on board_snapshots for select
 create policy "membros veem threads" on comment_threads for select
   using (board_role(board_id) is not null);
 create policy "comentaristas criam threads" on comment_threads for insert
-  with check (board_role(board_id) in ('owner','editor','commenter') and created_by_user = auth.uid());
+  with check (board_role(board_id) in ('owner','editor','commenter') and created_by_user = (select auth.uid()));
 create policy "comentaristas resolvem threads" on comment_threads for update
   using (board_role(board_id) in ('owner','editor','commenter'));
 
 create policy "membros veem comentários" on comments for select
   using (exists (select 1 from comment_threads t where t.id = thread_id and board_role(t.board_id) is not null));
 create policy "comentaristas comentam" on comments for insert
-  with check (author_user = auth.uid() and exists (
+  with check (author_user = (select auth.uid()) and exists (
     select 1 from comment_threads t where t.id = thread_id
       and board_role(t.board_id) in ('owner','editor','commenter')));
 create policy "autor edita comentário" on comments for update
-  using (author_user = auth.uid());
+  using (author_user = (select auth.uid()));
 create policy "autor apaga comentário" on comments for delete
-  using (author_user = auth.uid());
+  using (author_user = (select auth.uid()));
 
 create policy "membros veem arquivos" on board_assets for select
   using (board_role(board_id) is not null);
 create policy "editores sobem arquivos" on board_assets for insert
-  with check (board_role(board_id) in ('owner','editor') and uploaded_by_user = auth.uid());
+  with check (board_role(board_id) in ('owner','editor') and uploaded_by_user = (select auth.uid()));
