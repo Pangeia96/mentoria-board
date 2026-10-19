@@ -1,0 +1,30 @@
+@import "tailwindcss";
+@import "../styles/tokens.css";
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+  body {
+    background: var(--mb-bg);
+    color: var(--mb-text);
+    font-family: var(--mb-font-sans);
+    font-size: var(--mb-text-sm);
+    line-height: var(--mb-text-sm-lh);
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid var(--mb-focus);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@keyframes mb-spin { to { transform: rotate(360deg); } }
+@keyframes mb-pulse { 50% { opacity: 0.5; } }
+@keyframes mb-in { from { opacity: 0; transform: translateY(4px) scale(0.98); } }
