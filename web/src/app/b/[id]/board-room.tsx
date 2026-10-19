@@ -14,6 +14,7 @@ import { BoardMenu } from "./board-menu";
 import { ShareModal } from "./share-modal";
 import { ItemNode, measureTextHeight, type NodeHandlers } from "./board/nodes";
 import { ContextBar, PenFlyout, ShapeFlyout } from "./board/context-bar";
+import { LASER_FADE_MS, LASER_MAX_POINTS, LaserLayer, type LaserPoint, type RemoteLaser } from "./board/laser";
 import {
   FONT, INK, PRESENCE_HEX, SELECTION, SURFACE, aabb, connectorBox, connectorEnds, contains, inkHex, intersects, isBox, hitsStroke,
   anchorsOf, connectorPoints, nearestAnchor, newConnector, newShape, newSticky, newStroke, newText, normBox, stickyFontSize, thinPoints,
@@ -32,8 +33,8 @@ type Draft =
 
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 4;
-const TOOLS: Tool[] = ["select", "hand", "sticky", "shape", "text", "connector", "pen"];
-const CREATE_TOOLS = new Set<Tool>(["sticky", "shape", "text", "connector", "pen"]);
+const TOOLS: Tool[] = ["select", "hand", "sticky", "shape", "text", "connector", "pen", "laser"];
+const CREATE_TOOLS = new Set<Tool>(["sticky", "shape", "text", "connector", "pen", "laser"]);
 
 const boxOf = (it: Item, byId: Map<string, Item>): Box => (isBox(it) ? aabb(it) : connectorBox(it, byId));
 const union = (boxes: Box[]): Box | null => {
@@ -80,6 +81,10 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
   const newTextId = useRef<string | null>(null);
   const dragStart = useRef<Map<string, Pt> | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
+  const laserPts = useRef<LaserPoint[]>([]);
+  const laserDown = useRef(false);
+  const laserStroke = useRef(0);
+  const laserColor = PRESENCE_HEX[me.color] ?? SELECTION;
   const [hoverId, setHoverId] = useState<string | null>(null); // objeto mostrando os pontos de conexão
   const [endDrag, setEndDrag] = useState<{ which: "from" | "to"; to: Endpoint } | null>(null);
 
@@ -277,6 +282,7 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
       }
       if (k === "v") setTool("select");
       else if (k === "h") setTool("hand");
+      else if (k === "k") setTool("laser");
       else if (!canEdit) return;
       else if (k === "n") setTool("sticky");
       else if (k === "s") setTool("shape");
@@ -371,6 +377,12 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
       setDraft({ kind: "lasso", start: p, cur: p, additive: e.evt.shiftKey });
       return;
     }
+    if (tool === "laser") {
+      laserDown.current = true;
+      laserStroke.current += 1;
+      laserPts.current.push({ x: p.x, y: p.y, t: Date.now(), s: laserStroke.current });
+      return;
+    }
     if (!canEdit) return;
     setEditing(null);
     e.evt.preventDefault(); // não deixa o mousedown tirar o foco do editor que vai abrir
@@ -400,6 +412,11 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
       const h = boxUnder(p, 24 / view.scale)?.id ?? null;
       if (h !== hoverId) setHoverId(h);
     } else if (hoverId) setHoverId(null);
+    if (laserDown.current) {
+      const pts = laserPts.current;
+      pts.push({ x: p.x, y: p.y, t: Date.now(), s: laserStroke.current });
+      if (pts.length > LASER_MAX_POINTS) pts.splice(0, pts.length - LASER_MAX_POINTS);
+    }
     if (!draft) return;
     if (draft.kind === "connector") setDraft({ ...draft, cur: p, to: resolveEnd(p, draft.from.itemId) });
     else if (draft.kind === "pen") setDraft({ ...draft, points: [...draft.points, p.x, p.y] });
@@ -408,6 +425,7 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
   };
 
   const onStageUp = () => {
+    laserDown.current = false;
     const d = draft;
     setDraft(null);
     if (!d) return;
@@ -500,6 +518,24 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
     peers.forEach((p) => p.selection?.forEach((id) => m.set(id, { name: p.user.name, color: PRESENCE_HEX[p.user.color] ?? SELECTION })));
     return m;
   }, [peers]);
+
+  /* envia o rastro do lápis mágico para os outros enquanto houver algo visível */
+  useEffect(() => {
+    let live = false;
+    const id = setInterval(() => {
+      const now = Date.now();
+      const alive = laserPts.current.filter((p) => now - p.t < LASER_FADE_MS);
+      if (alive.length) {
+        live = true;
+        actions.setLaser({ sentAt: now, color: laserColor, pts: alive.map((p) => [Math.round(p.x), Math.round(p.y), p.t, p.s]) });
+      } else if (live) {
+        live = false;
+        actions.setLaser(null);
+      }
+    }, 60);
+    return () => clearInterval(id);
+  }, [actions, laserColor]);
+  const remoteLasers: RemoteLaser[] = peers.filter((p) => p.laser && p.laserAt).map((p) => ({ clientId: p.clientId, laser: p.laser!, receivedAt: p.laserAt! }));
 
   /* mantém a barra de opções dentro da tela e fora da barra de ferramentas (mexe só no DOM, sem estado) */
   useLayoutEffect(() => {
@@ -674,6 +710,7 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
               )}
               {draft?.kind === "pen" && <Line points={draft.points} stroke={inkHex(penColor)} strokeWidth={penWidth} lineCap="round" lineJoin="round" tension={0.4} listening={false} />}
             </Layer>
+            <LaserLayer local={laserPts} localColor={laserColor} remote={remoteLasers} scale={view.scale} />
           </Stage>
         )}
 

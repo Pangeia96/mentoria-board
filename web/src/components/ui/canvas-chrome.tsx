@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import {
   AlignCenter, AlignLeft, ArrowDownToLine, ArrowUpToLine, Bold, Check, Circle, Copy, Diamond, Eraser, Frame, Hand, ImageIcon,
   Italic, Layers, Lock, Map as MapIcon, MessageSquare, Minus, MousePointer2, MoveUpRight, Pencil, Plus, Redo2, Square,
-  StickyNote, Trash2, Triangle, Type, Underline, Undo2, WifiOff,
+  Sparkles, StickyNote, Trash2, Triangle, Type, Underline, Undo2, WifiOff,
 } from "lucide-react";
 import { Popover } from "radix-ui";
 import clsx from "clsx";
@@ -29,7 +29,7 @@ export const Sep = ({ vertical }: { vertical?: boolean }) => (
 );
 
 /* ----------------------------------------------------------------- CreationToolbar */
-export type Tool = "select" | "hand" | "sticky" | "shape" | "text" | "connector" | "pen" | "frame" | "comment" | "image";
+export type Tool = "select" | "hand" | "sticky" | "shape" | "text" | "connector" | "pen" | "laser" | "frame" | "comment" | "image";
 
 const TOOLS: { id: Tool; label: string; key: string; icon: ReactNode; edit: boolean }[] = [
   { id: "select", label: "Selecionar", key: "V", icon: <MousePointer2 />, edit: false },
@@ -39,6 +39,7 @@ const TOOLS: { id: Tool; label: string; key: string; icon: ReactNode; edit: bool
   { id: "text", label: "Texto", key: "T", icon: <Type />, edit: true },
   { id: "connector", label: "Seta", key: "L", icon: <MoveUpRight />, edit: true },
   { id: "pen", label: "Caneta", key: "P", icon: <Pencil />, edit: true },
+  { id: "laser", label: "Lápis mágico (some sozinho)", key: "K", icon: <Sparkles />, edit: false },
   { id: "frame", label: "Frame", key: "F", icon: <Frame />, edit: true },
   { id: "image", label: "Imagem", key: "I", icon: <ImageIcon />, edit: true },
   { id: "comment", label: "Comentário", key: "C", icon: <MessageSquare />, edit: false },

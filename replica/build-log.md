@@ -109,3 +109,16 @@ esperados (±3px). O usuário já criou setas pregadas pelos 4 lados no quadro d
 a tela de "acesso removido" no navegador de quem foi expulso.
 
 Matriz: must-haves 19 `yes` + 3 `partial` de 22.
+
+## Lápis mágico (2026-10-19)
+
+Pedido do usuário: desenhar para apontar coisas aos alunos e o traço ir sumindo atrás, devagar.
+
+- Ferramenta `K` (ícone de brilho). Funciona para todos os papéis, inclusive "só ver": não grava nada no quadro nem no desfazer.
+- O rastro some a partir do fim em 2,5s (afina e perde opacidade), com brilho na cor de presença de quem desenha.
+- Vai ao vivo pelo awareness (a cada 60ms, até 240 pontos); quem recebe corrige a diferença de relógio usando a hora em que recebeu.
+- Soltar e desenhar de novo começa outro traço (sem "ponte" entre eles).
+
+**Verificado:** opacidade 0,65 logo depois de desenhar → 0,29 após 1s → nada após 3s; outro participante recebeu 86
+atualizações do rastro enquanto eu desenhava (script `realtime/scripts/watch-laser.mjs`).
+**Não verificado:** o desenho na tela de um 2º navegador (só os dados recebidos).

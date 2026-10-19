@@ -9,6 +9,7 @@ import type { Actor } from "@/lib/auth";
 export const LOCAL = Symbol("local");
 
 import type { Item, ItemPatch } from "./board/model";
+import type { LaserWire } from "./board/laser";
 export type { Item } from "./board/model";
 
 /** Itens antigos (M1) não tinham rotation/locked: completa com padrões ao ler. */
@@ -23,8 +24,11 @@ export type PresenceState = {
   viewport?: Viewport;
   /** "Trazer para mim": ts único, a visão de destino e quem deve vir (null = todos). */
   summon?: { ts: number; view: Viewport; target: number | null } | null;
+  /** Rastro do lápis mágico (efêmero). */
+  laser?: LaserWire | null;
 };
-export type RemotePeer = PresenceState & { clientId: number };
+/** laserAt: quando este navegador recebeu a versão atual do rastro (corrige a diferença de relógio). */
+export type RemotePeer = PresenceState & { clientId: number; laserAt?: number };
 
 export type ConnState = "connecting" | "connected" | "reconnecting" | "offline";
 
@@ -80,13 +84,20 @@ export function useBoardDoc({ boardId, token, wsUrl, me, onSummon }: {
     p.awareness?.setLocalStateField("user", { id: me.id, name: me.name, color: me.color, kind: me.kind });
 
     const seenSummons = new Set<number>();
+    const laserSeen = new Map<number, { sentAt: number; at: number }>();
     const startedAt = Date.now();
     const readPeers = () => {
       const out: RemotePeer[] = [];
       p.awareness?.getStates().forEach((s, clientId) => {
         const st = s as PresenceState;
         if (clientId === p.awareness?.clientID || !st.user) return;
-        out.push({ ...st, clientId });
+        let laserAt: number | undefined;
+        if (st.laser) {
+          const prev = laserSeen.get(clientId);
+          if (!prev || prev.sentAt !== st.laser.sentAt) laserSeen.set(clientId, { sentAt: st.laser.sentAt, at: Date.now() });
+          laserAt = laserSeen.get(clientId)!.at;
+        }
+        out.push({ ...st, clientId, laserAt });
         // um "trazer para mim" novo de outra pessoa, para todos ou para mim, feito depois que entrei
         const sm = st.summon;
         if (sm && !seenSummons.has(sm.ts)) {
@@ -206,6 +217,9 @@ export function useBoardDoc({ boardId, token, wsUrl, me, onSummon }: {
       },
       setSelection(ids: string[]) {
         providerRef.current?.awareness?.setLocalStateField("selection", ids);
+      },
+      setLaser(l: LaserWire | null) {
+        providerRef.current?.awareness?.setLocalStateField("laser", l);
       },
       setViewport(v: Viewport) {
         providerRef.current?.awareness?.setLocalStateField("viewport", v);
