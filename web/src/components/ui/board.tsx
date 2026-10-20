@@ -49,12 +49,12 @@ export function AvatarStack({ people, max = 4, onClick }: { people: Person[]; ma
       className="flex items-center rounded-full p-0.5 hover:bg-surface-hover"
     >
       {shown.map((p, i) => (
-        <span key={p.id} className={clsx("rounded-full ring-2 ring-surface", i > 0 && "-ml-2")}>
+        <span key={p.id} aria-hidden className={clsx("rounded-full ring-2 ring-surface", i > 0 && "-ml-2")}>
           <Avatar person={p} />
         </span>
       ))}
       {extra > 0 && (
-        <span className="-ml-2 inline-flex size-8 items-center justify-center rounded-full bg-surface-muted text-xs font-semibold text-text-muted ring-2 ring-surface">
+        <span aria-hidden className="-ml-2 inline-flex size-8 items-center justify-center rounded-full bg-surface-muted text-xs font-semibold text-text-muted ring-2 ring-surface">
           +{extra}
         </span>
       )}
@@ -79,7 +79,7 @@ export function BoardCard({ title, client, updated, href, thumbnail, menuItems =
         <div className="aspect-[16/10] border-b border-border bg-canvas">{thumbnail}</div>
         <div className="flex flex-col gap-0.5 px-3 py-2.5 pr-12">
           <span className="truncate text-sm font-semibold text-text">{title}</span>
-          <span className="truncate text-xs text-text-muted">{client ? `${client} · ` : ""}editado {updated}</span>
+          <span className="truncate text-xs text-text-muted" suppressHydrationWarning>{client ? `${client} · ` : ""}editado {updated}</span>
         </div>
       </a>
       <div className="absolute bottom-2 right-2 z-10">

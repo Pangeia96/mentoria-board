@@ -751,6 +751,9 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
     <TooltipProvider>
       <div
         ref={wrap}
+        role="application"
+        aria-label={`Quadro ${title}`}
+        aria-roledescription="quadro branco"
         className="fixed inset-0 touch-none overflow-hidden bg-canvas"
         onDragOver={(e) => { if (canEdit && e.dataTransfer.types.includes("Files")) e.preventDefault(); }}
         onDrop={(e) => {
@@ -796,8 +799,6 @@ export function BoardRoom({ board, me, token, wsUrl }: RoomProps) {
             onPointerLeave={() => actions.setCursor(null)}
             onTouchMove={onTouchMove}
             onTouchEnd={() => { pinch.current = null; }}
-            role="application"
-            aria-label={`Quadro ${board.title}`}
           >
             <Layer listening={tool === "select" && !panning}>
               {items.map((it) => <ItemNode key={it.id} item={it} byId={byId} h={handlersFor(it)} />)}

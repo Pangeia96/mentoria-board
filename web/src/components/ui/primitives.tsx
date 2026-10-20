@@ -86,14 +86,15 @@ type IconButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   size?: "sm" | "md";
   pressed?: boolean;
   tooltipSide?: "top" | "right" | "bottom" | "left";
+  /** false = sem tooltip (use em botões que recebem o foco ao abrir um modal: o Esc fecharia o tooltip, não o modal) */
+  tooltip?: boolean;
 };
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { label, shortcut, size = "md", pressed, tooltipSide, className, children, ...rest },
+  { label, shortcut, size = "md", pressed, tooltipSide, tooltip = true, className, children, ...rest },
   ref,
 ) {
-  return (
-    <Tooltip label={label} shortcut={shortcut} side={tooltipSide}>
+  const button = (
       <button
         ref={ref}
         aria-label={label}
@@ -109,8 +110,8 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       >
         {children}
       </button>
-    </Tooltip>
   );
+  return tooltip ? <Tooltip label={label} shortcut={shortcut} side={tooltipSide}>{button}</Tooltip> : button;
 });
 
 /* ----------------------------------------------------------------- Field / Input / Textarea */
@@ -251,7 +252,7 @@ export function Modal({ open, onOpenChange, title, description, children, footer
               )}
             </div>
             <Dialog.Close asChild>
-              <IconButton label="Fechar" size="sm" tooltipSide="left"><X /></IconButton>
+              <IconButton label="Fechar" size="sm" tooltip={false} title="Fechar (Esc)"><X /></IconButton>
             </Dialog.Close>
           </div>
           {children}
@@ -276,7 +277,7 @@ export function Drawer({ open, onOpenChange, title, children }: { open: boolean;
             <Dialog.Title className="text-md font-semibold">{title}</Dialog.Title>
             <Dialog.Description className="sr-only">{title}</Dialog.Description>
             <Dialog.Close asChild>
-              <IconButton label="Fechar painel" size="sm" tooltipSide="left"><X /></IconButton>
+              <IconButton label="Fechar painel" size="sm" tooltip={false} title="Fechar (Esc)"><X /></IconButton>
             </Dialog.Close>
           </div>
           <div className="flex-1 overflow-y-auto p-4">{children}</div>
